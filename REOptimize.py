@@ -95,21 +95,21 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
-    train_word, train_e1pos, train_e2pos, train_targs = REData.generate_data(train_file,
+    train_word, train_e1pos, train_e2pos, train_targ = REData.generate_data(train_file,
                                                                       word2ix,
                                                                       e1pos2ix,
                                                                       e2pos2ix,
                                                                       targ2ix,
                                                                       max_sent_len)
 
-    val_word, val_e1pos, val_e2pos, val_targs = REData.generate_data(val_file,
+    val_word, val_e1pos, val_e2pos, val_targ = REData.generate_data(val_file,
                                                               word2ix,
                                                               e1pos2ix,
                                                               e2pos2ix,
                                                               targ2ix,
                                                               max_sent_len)
 
-    test_word, test_e1pos, test_e2pos, test_targs = REData.generate_data(test_file,
+    test_word, test_e1pos, test_e2pos, test_targ = REData.generate_data(test_file,
                                                                   word2ix,
                                                                   e1pos2ix,
                                                                   e2pos2ix,
@@ -137,9 +137,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         local_monitor_score, local_test_loss, local_test_acc, local_param = train_model(
             model, optimizer,
             global_best_score,
-            (train_word, train_e1pos, train_e2pos, train_targs),
-            (val_word, val_e1pos, val_e2pos, val_targs),
-            (test_word, test_e1pos, test_e2pos, test_targs),
+            (train_word, train_e1pos, train_e2pos, train_targ),
+            (val_word, val_e1pos, val_e2pos, val_targ),
+            (test_word, test_e1pos, test_e2pos, test_targ),
             targ2ix,
             **params
         )
@@ -159,8 +159,22 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                                         map_location=lambda storage,
                                         loc: storage)
 
+    params = global_best_checkpoint['params']
+
+    model = getattr(REModule, params['classification_model'])(
+                len(word2ix), len(e1pos2ix), len(e2pos2ix), len(targ2ix),
+                max_sent_len, embed_weights, **params
+            ).to(device=device)
+
+    est_word, test_e1pos, test_e2pos, test_targ = ModuleOptim.batch_to_device((test_word,
+                                                                               test_e1pos,
+                                                                               test_e2pos,
+                                                                               test_targ), device)
+    eval_data(model, (test_word, test_e1pos, test_e2pos), test_targ, targ2ix)
+
     logger.info("Final best test_acc: %.4f" % global_best_checkpoint['test_acc'])
-    logger.info("Final best params:", global_best_checkpoint['params'])
+    logger.info("Final best params: %s" % global_best_checkpoint['params'])
+
 
 def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, **params):
 

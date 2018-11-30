@@ -192,6 +192,7 @@ def generate_feat2ix(train_file):
 
 
 def generate_data(data_file, word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len):
+
     rel_data = load_pickle(pickle_file=data_file)
     word_feat = [rel.feat_inputs['word_sent'] for rel in rel_data]
     word_list = prepare_seq_2d(word_feat, word2ix)
