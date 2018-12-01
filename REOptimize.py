@@ -17,7 +17,7 @@ import ModuleOptim
 import REData
 warnings.simplefilter("ignore", UserWarning)
 
-REUtils.setup_stream_logger('REOptimize', level=logging.DEBUG)
+REUtils.setup_stream_logger('REOptimize', level=logging.INFO)
 logger = logging.getLogger('REOptimize')
 
 
@@ -63,7 +63,7 @@ def eval_data(model, feats, target, rel_idx):
                                     target_names=[key for key, value in rel_idx.items() if value in idx_set]
                                     )
               )
-        print(loss, acc)
+        print("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
 
 
 def model_instance(word_size, e1pos_size, e2pos_size, targ_size,
@@ -118,9 +118,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     embed_weights = REData.load_pickle(embed_file)
 
-
-    monitor_scores, test_losses, test_acces, test_params = [], [], [], []
-
+    monitor_score_history, test_loss_history, test_acc_history, params_history = [], [], [], []
 
     for eval_i in range(1, max_evals + 1):
         params = {}
@@ -132,9 +130,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         model, optimizer = model_instance(len(word2ix), len(e1pos2ix), len(e2pos2ix), len(targ2ix),
                                           max_sent_len, embed_weights, **params)
 
-        global_best_score = best_score(monitor_scores, monitor)
+        global_best_score = best_score(monitor_score_history, monitor)
 
-        local_monitor_score, local_test_loss, local_test_acc, local_param = train_model(
+        local_monitor_score, local_test_loss, local_test_acc = train_model(
             model, optimizer,
             global_best_score,
             (train_word, train_e1pos, train_e2pos, train_targ),
@@ -144,20 +142,25 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
             **params
         )
 
-        monitor_scores.append(local_monitor_score)
-        test_losses.append(local_test_loss)
-        test_acces.append(local_test_acc)
-        test_params.append(local_param)
+        monitor_score_history.append(local_monitor_score)
+        test_loss_history.append(local_test_loss)
+        test_acc_history.append(local_test_acc)
+        params_history.append(params)
 
-        best_index = monitor_scores.index(best_score(monitor_scores, monitor))
+        best_index = monitor_score_history.index(best_score(monitor_score_history, monitor))
         logger.info("Current best %s: %.4f, test acc: %.4f\n" % (monitor,
-                                                               monitor_scores[best_index],
-                                                               test_acces[best_index]))
+                                                                 monitor_score_history[best_index],
+                                                                 test_acc_history[best_index]))
 
-    logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acces), stdev(test_acces)))
     global_best_checkpoint = torch.load(global_best_checkpoint_file,
                                         map_location=lambda storage,
                                         loc: storage)
+
+    logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
+    logger.info("Final best test_acc: %.4f" % global_best_checkpoint['test_acc'])
+    logger.info("Final best params: %s" % global_best_checkpoint['params'])
+
+
 
     params = global_best_checkpoint['params']
 
@@ -166,14 +169,13 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                 max_sent_len, embed_weights, **params
             ).to(device=device)
 
-    est_word, test_e1pos, test_e2pos, test_targ = ModuleOptim.batch_to_device((test_word,
+    test_word, test_e1pos, test_e2pos, test_targ = ModuleOptim.batch_to_device((test_word,
                                                                                test_e1pos,
                                                                                test_e2pos,
                                                                                test_targ), device)
-    eval_data(model, (test_word, test_e1pos, test_e2pos), test_targ, targ2ix)
 
-    logger.info("Final best test_acc: %.4f" % global_best_checkpoint['test_acc'])
-    logger.info("Final best params: %s" % global_best_checkpoint['params'])
+    model.load_state_dict(global_best_checkpoint['state_dict'])
+    eval_data(model, (test_word, test_e1pos, test_e2pos), test_targ, targ2ix)
 
 
 def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, **params):
@@ -191,9 +193,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
     test_word, test_e1pos, test_e2pos, test_targ = ModuleOptim.batch_to_device(test_data, device)
 
-    local_best_score = None
-
-    val_losses = []
+    val_losses, val_acces, test_losses, test_acces = [], [], [], []
 
     patience = params['patience']
 
@@ -225,19 +225,21 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
 
             val_losses.append(val_loss)
+            val_acces.append(val_acc)
 
             test_prob = model(test_word, test_e1pos, test_e2pos)
             test_loss = F.nll_loss(test_prob, test_targ).item()
             test_pred = torch.argmax(test_prob, dim=1)
             test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
 
+            test_losses.append(test_loss)
+            test_acces.append(test_acc)
+
         if patience and len(val_losses) >= patience and val_losses[-patience] == min(val_losses[-patience:]):
             print('[Early Stopping] patience reached, stopping...')
             break
 
         monitor_score = locals()[params['monitor']]
-
-        local_is_best, local_best_score = ModuleOptim.is_best_score(monitor_score, local_best_score, params['monitor'])
 
         global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
 
@@ -254,19 +256,6 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                                                  test_loss,
                                                  test_acc))
 
-        local_save_info = ModuleOptim.save_checkpoint({
-            'epoch': epoch,
-            'params': params,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'monitor': params['monitor'],
-            'best_score': local_best_score,
-            'val_loss': val_loss,
-            'val_acc': val_acc,
-            'test_loss': test_loss,
-            'test_acc': test_acc
-        }, local_is_best, "models/best_local_%s_checkpoint.pth" % params['classification_model'])
-
         global_save_info = ModuleOptim.save_checkpoint({
             'epoch': epoch,
             'params': params,
@@ -280,20 +269,13 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             'test_acc': test_acc
         }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
 
-    local_checkpoint = torch.load("models/best_local_%s_checkpoint.pth" % params['classification_model'],
-                                  map_location=lambda storage,
-                                  loc: storage)
-    logger.info('Local best: val_loss %.4f, val_acc %.4f | test_loss %.4f, test_acc %.4f' % (
-        local_checkpoint['val_loss'],
-        local_checkpoint['val_acc'],
-        local_checkpoint['test_loss'],
-        local_checkpoint['test_acc']
-    ))
+    monitor_scores = locals()[params['monitor'] + 'es']
 
-    model.load_state_dict(local_checkpoint['state_dict'])
+    best_local_index = monitor_scores.index(best_score(monitor_scores, params['monitor']))
 
-    eval_data(model, (test_word, test_e1pos, test_e2pos), test_targ, targ2ix)
-    return local_best_score, local_checkpoint['test_loss'], local_checkpoint['test_acc'], local_checkpoint['params']
+    return monitor_scores[best_local_index], \
+           test_losses[best_local_index], \
+           test_acces[best_local_index]
 
 def main():
     train_file = "data/train.pkl"
