@@ -147,6 +147,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         test_acc_history.append(local_test_acc)
         params_history.append(params)
 
+        logger.info("Current local %s: %.4f, test acc: %.4f\n" % (monitor,
+                                                                  monitor_score_history[-1],
+                                                                  test_acc_history[-1]))
         best_index = monitor_score_history.index(best_score(monitor_score_history, monitor))
         logger.info("Current best %s: %.4f, test acc: %.4f\n" % (monitor,
                                                                  monitor_score_history[best_index],
@@ -157,10 +160,10 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                                         loc: storage)
 
     logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
-    logger.info("Final best test_acc: %.4f" % global_best_checkpoint['test_acc'])
+    logger.info("Final best %s: %.4f, test_acc: %.4f" % (monitor,
+                                                         global_best_checkpoint['best_score'],
+                                                         global_best_checkpoint['test_acc']))
     logger.info("Final best params: %s" % global_best_checkpoint['params'])
-
-
 
     params = global_best_checkpoint['params']
 
