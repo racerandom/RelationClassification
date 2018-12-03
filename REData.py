@@ -121,19 +121,23 @@ def load_pickle(pickle_file='data/temp.pkl'):
     print("Successfully load data from pickle file '%s'..." % pickle_file)
     return data
 
+
 ## convert a token to an index number
 def tok2ix(tok, to_ix, unk_ix):
     return to_ix[tok] if tok in to_ix else unk_ix
+
 
 ## convert 1D token sequences to token_index sequences
 def prepare_seq_1d(seq_1d, to_ix, unk_ix=0):
     ix_seq_1d = [tok2ix(tok, to_ix, unk_ix) for tok in seq_1d]
     return ix_seq_1d
 
+
 ## convert 2D token sequences to token_index sequences
 def prepare_seq_2d(seq_2d, to_ix, unk_ix=0):
     ix_seq_2d = [[tok2ix(tok, to_ix, unk_ix) for tok in seq_1d] for seq_1d in seq_2d]
     return ix_seq_2d
+
 
 ## padding 2D index sequences to a fixed given length
 def padding_2d(seq_2d, max_seq_len, padding=0, direct='right'):
@@ -168,6 +172,12 @@ def save_all_data():
     pickle_data(test_data, pickle_file='data/test.pkl')
 
 
+def slim_word_embed(word2ix, embed_file, embed_pickle_file):
+
+    embed_weights = pre_embed_to_weight(word2ix, embed_file, binary=True)
+    pickle_data(embed_weights, pickle_file=embed_pickle_file)
+
+
 def generate_feat2ix(train_file):
 
     train_data = load_pickle(pickle_file=train_file)
@@ -196,33 +206,38 @@ def generate_data(data_file, word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len)
     rel_data = load_pickle(pickle_file=data_file)
     word_feat = [rel.feat_inputs['word_sent'] for rel in rel_data]
     word_list = prepare_seq_2d(word_feat, word2ix)
-    word_tensor = torch.tensor(padding_2d(word_list, max_sent_len))
+    word_t = torch.tensor(padding_2d(word_list, max_sent_len))
 
     e1pos_feat = [[str(pos[0]) for pos in rel.feat_inputs['pos_sent']] for rel in rel_data]
     e2pos_feat = [[str(pos[1]) for pos in rel.feat_inputs['pos_sent']] for rel in rel_data]
 
     e1pos_list = prepare_seq_2d(e1pos_feat, e1pos2ix)
-    e1pos_tensor = torch.tensor(padding_2d(e1pos_list, max_sent_len))
+    e1pos_t = torch.tensor(padding_2d(e1pos_list, max_sent_len))
 
     e2pos_list = prepare_seq_2d(e2pos_feat, e2pos2ix)
-    e2pos_tensor = torch.tensor(padding_2d(e2pos_list, max_sent_len))
+    e2pos_t = torch.tensor(padding_2d(e2pos_list, max_sent_len))
 
     targs = [rel.rel for rel in rel_data]
-    targ_tensor = torch.tensor(prepare_seq_1d(targs, targ2ix))
+    targ_t = torch.tensor(prepare_seq_1d(targs, targ2ix))
+
+    e1ix_Feat = [rel.e1_tids for rel in rel_data]
+    e2ix_Feat = [rel.e2_tids for rel in rel_data]
+    max_entity_len = max(max([len(e1ix) for e1ix in e1ix_Feat]), max([len(e2ix) for e2ix in e2ix_Feat]))
+    e1ix_t = torch.tensor(padding_2d(e1ix_Feat, max_entity_len, padding=-1))
+    e2ix_t = torch.tensor(padding_2d(e2ix_Feat, max_entity_len, padding=-1))
+
 
     print("[Data] '%s' is generated with: word %s, e1pos %s, e2pos %s, targs %s\n" % (data_file,
-                                                                                      word_tensor.shape,
-                                                                                      e1pos_tensor.shape,
-                                                                                      e2pos_tensor.shape,
-                                                                                      targ_tensor.shape))
+                                                                                      word_t.shape,
+                                                                                      e1pos_t.shape,
+                                                                                      e2pos_t.shape,
+                                                                                      targ_t.shape))
 
 
-    return word_tensor, e1pos_tensor, e2pos_tensor, targ_tensor
+    return word_t, e1pos_t, e2pos_t, e1ix_t, e2ix_t, targ_t
 
 
-if __name__ == '__main__':
-
-    # save_all_data()
+def main():
 
     train_file = "data/train.pkl"
     val_file = "data/val.pkl"
@@ -230,31 +245,35 @@ if __name__ == '__main__':
 
     word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len = generate_feat2ix(train_file)
 
-    train_word, train_e1pos, train_e2pos, train_targs = generate_data(train_file,
+    train_word, train_e1pos, train_e2pos, train_e1ix, train_e2ix, train_targs = generate_data(train_file,
                                                                       word2ix,
                                                                       e1pos2ix,
                                                                       e2pos2ix,
                                                                       targ2ix,
                                                                       max_sent_len)
 
-    val_word, val_e1pos, val_e2pos, val_targs = generate_data(val_file,
+    val_word, val_e1pos, val_e2pos, val_e1ix, val_e2ix, val_targs = generate_data(val_file,
                                                               word2ix,
                                                               e1pos2ix,
                                                               e2pos2ix,
                                                               targ2ix,
                                                               max_sent_len)
 
-    test_word, test_e1pos, test_e2pos, test_targs = generate_data(test_file,
+    test_word, test_e1pos, test_e2pos, test_e1ix, test_e2ix, test_targs = generate_data(test_file,
                                                                   word2ix,
                                                                   e1pos2ix,
                                                                   e2pos2ix,
                                                                   targ2ix,
                                                                   max_sent_len)
 
-    embed_file = "/Users/fei-c/Resources/embed/deps.words.bin"
-    embed_weights = pre_embed_to_weight(word2ix, embed_file, binary=True)
 
-    pickle_data(embed_weights, pickle_file='data/deps.words.embed')
+if __name__ == '__main__':
+
+    main()
+
+
+
+
 
 
 

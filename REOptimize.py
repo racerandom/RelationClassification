@@ -17,7 +17,7 @@ import ModuleOptim
 import REData
 warnings.simplefilter("ignore", UserWarning)
 
-REUtils.setup_stream_logger('REOptimize', level=logging.INFO)
+REUtils.setup_stream_logger('REOptimize', level=logging.DEBUG)
 logger = logging.getLogger('REOptimize')
 
 
@@ -57,13 +57,13 @@ def eval_data(model, feats, target, rel_idx):
 
         idx_set = list(set([p.item() for p in pred]).union(set([t.item() for t in target])))
 
-        print('-' * 80)
-        print(classification_report(pred,
+        logger.info('-' * 80)
+        logger.info(classification_report(pred,
                                     target,
                                     target_names=[key for key, value in rel_idx.items() if value in idx_set]
                                     )
               )
-        print("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
+        logger.info("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
 
 
 def model_instance(word_size, e1pos_size, e2pos_size, targ_size,
@@ -95,26 +95,26 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
-    train_word, train_e1pos, train_e2pos, train_targ = REData.generate_data(train_file,
-                                                                      word2ix,
-                                                                      e1pos2ix,
-                                                                      e2pos2ix,
-                                                                      targ2ix,
-                                                                      max_sent_len)
+    train_dataset = REData.generate_data(train_file,
+                                         word2ix,
+                                         e1pos2ix,
+                                         e2pos2ix,
+                                         targ2ix,
+                                         max_sent_len)
 
-    val_word, val_e1pos, val_e2pos, val_targ = REData.generate_data(val_file,
-                                                              word2ix,
-                                                              e1pos2ix,
-                                                              e2pos2ix,
-                                                              targ2ix,
-                                                              max_sent_len)
+    val_datset = REData.generate_data(val_file,
+                                      word2ix,
+                                      e1pos2ix,
+                                      e2pos2ix,
+                                      targ2ix,
+                                      max_sent_len)
 
-    test_word, test_e1pos, test_e2pos, test_targ = REData.generate_data(test_file,
-                                                                  word2ix,
-                                                                  e1pos2ix,
-                                                                  e2pos2ix,
-                                                                  targ2ix,
-                                                                  max_sent_len)
+    test_datset = REData.generate_data(test_file,
+                                       word2ix,
+                                       e1pos2ix,
+                                       e2pos2ix,
+                                       targ2ix,
+                                       max_sent_len)
 
     embed_weights = REData.load_pickle(embed_file)
 
@@ -135,9 +135,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         local_monitor_score, local_test_loss, local_test_acc = train_model(
             model, optimizer,
             global_best_score,
-            (train_word, train_e1pos, train_e2pos, train_targ),
-            (val_word, val_e1pos, val_e2pos, val_targ),
-            (test_word, test_e1pos, test_e2pos, test_targ),
+            train_dataset,
+            val_datset,
+            test_datset,
             targ2ix,
             **params
         )
@@ -147,9 +147,10 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         test_acc_history.append(local_test_acc)
         params_history.append(params)
 
-        logger.info("Current local %s: %.4f, test acc: %.4f\n" % (monitor,
-                                                                  monitor_score_history[-1],
-                                                                  test_acc_history[-1]))
+        logger.info("Current local %s: %.4f, test acc: %.4f" % (monitor,
+                                                                monitor_score_history[-1],
+                                                                test_acc_history[-1]))
+
         best_index = monitor_score_history.index(best_score(monitor_score_history, monitor))
         logger.info("Current best %s: %.4f, test acc: %.4f\n" % (monitor,
                                                                  monitor_score_history[best_index],
@@ -172,16 +173,15 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                 max_sent_len, embed_weights, **params
             ).to(device=device)
 
-    test_word, test_e1pos, test_e2pos, test_targ = ModuleOptim.batch_to_device((test_word,
-                                                                               test_e1pos,
-                                                                               test_e2pos,
-                                                                               test_targ), device)
+    test_datset = ModuleOptim.batch_to_device(test_datset, device)
 
     model.load_state_dict(global_best_checkpoint['state_dict'])
-    eval_data(model, (test_word, test_e1pos, test_e2pos), test_targ, targ2ix)
+    eval_data(model, test_datset[:-1], test_datset[-1], targ2ix)
 
 
 def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, **params):
+
+    monitor = params['monitor']
 
     train_dataset = ModuleOptim.MultipleDatasets(*train_data)
 
@@ -192,9 +192,13 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
         num_workers=1,
     )
 
-    val_word, val_e1pos, val_e2pos, val_targ = ModuleOptim.batch_to_device(val_data, device)
+    val_data = ModuleOptim.batch_to_device(val_data, device)
+    val_feats = val_data[:-1]
+    val_targ = val_data[-1]
 
-    test_word, test_e1pos, test_e2pos, test_targ = ModuleOptim.batch_to_device(test_data, device)
+    test_data = ModuleOptim.batch_to_device(test_data, device)
+    test_feats = test_data[:-1]
+    test_targ = test_data[-1]
 
     val_losses, val_acces, test_losses, test_acces = [], [], [], []
 
@@ -204,13 +208,15 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
         epoch_losses = []
         epoch_acces = []
         start_time = time.time()
-        for step, train_sample in enumerate(train_data_loader):
-            train_word, train_e1pos, train_e2pos, train_targ = ModuleOptim.batch_to_device(train_sample, device)
+        for step, train_batch in enumerate(train_data_loader):
+            train_batch = ModuleOptim.batch_to_device(train_batch, device)
+            train_feats = train_batch[:-1]
+            train_targ = train_batch[-1]
 
             model.train()
             model.zero_grad()
 
-            pred_prob = model(train_word, train_e1pos, train_e2pos)
+            pred_prob = model(*train_feats)
             loss = F.nll_loss(pred_prob, train_targ)
             loss.backward(retain_graph=True)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=params['max_norm'])
@@ -222,15 +228,15 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
         model.eval()
         with torch.no_grad():
-            val_prob = model(val_word, val_e1pos, val_e2pos)
+            val_prob = model(*val_feats)
             val_loss = F.nll_loss(val_prob, val_targ).item()
             val_pred = torch.argmax(val_prob, dim=1)
             val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
 
-            val_losses.append(val_loss)
+            val_losses.append(*val_loss)
             val_acces.append(val_acc)
 
-            test_prob = model(test_word, test_e1pos, test_e2pos)
+            test_prob = model(test_feats)
             test_loss = F.nll_loss(test_prob, test_targ).item()
             test_pred = torch.argmax(test_prob, dim=1)
             test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
@@ -238,7 +244,9 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             test_losses.append(test_loss)
             test_acces.append(test_acc)
 
-        if patience and len(val_losses) >= patience and val_losses[-patience] == min(val_losses[-patience:]):
+        epoch_scores = locals()[monitor + 'es']
+
+        if patience and len(val_losses) >= patience and epoch_scores[-patience] == best_score(epoch_scores, monitor):
             print('[Early Stopping] patience reached, stopping...')
             break
 
@@ -287,7 +295,7 @@ def main():
     embed_file = "data/glove.100d.embed"
 
     param_space = {
-        'classification_model': ['baseRNN'],
+        'classification_model': ['entiAttnDotRNN'],
         'freeze_mode': [True],
         'pos_dim': range(5, 30 + 1, 5),
         'input_dropout': [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
