@@ -75,6 +75,20 @@ class baseNN(nn.Module):
                 torch.zeros(num_layer * bi_num, batch_size, hidden_dim // bi_num).to(device))
 
 
+class attnLayer(nn.Module):
+
+    def __init__(self, max_sent_len, attn_input_dim, **params):
+        super(attnLayer, self).__init__()
+        self.attn_fc1 = nn.Linear(attn_input_dim, params['attn_hidden_dim'])
+        self.hidden2prob = nn.Linear(params['attn_hidden_dim'], max_sent_len)
+
+    def forward(self, tensor_input):
+        attn_fc1_out = F.relu(self.attn_fc1(tensor_input))
+        prob_out = F.softmax(self.hidden2prob(attn_fc1_out))
+        return prob_out
+
+
+
 class baseRNN(baseNN):
 
     def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
@@ -97,7 +111,6 @@ class baseRNN(baseNN):
         self.fc1_drop = nn.Dropout(p=self.params['fc1_dropout'])
         self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
 
-
     def forward(self, *tensor_feats):
 
         batch_size = tensor_feats[0].shape[0]
@@ -114,7 +127,7 @@ class baseRNN(baseNN):
 
         rnn_out, rnn_hidden = self.rnn(rnn_input, rnn_hidden)
 
-        fc1_in = torch.cat((rnn_hidden[0][0, :, :], rnn_hidden[0][1, :, :]), dim=1)
+        fc1_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1)
 
         fc1_in = self.rnn_dropout(fc1_in)
 
@@ -147,13 +160,13 @@ class attnDotRNN(baseNN):
         self.fc1_drop = nn.Dropout(p=self.params['fc1_dropout'])
         self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
 
-    def forward(self, word_t, e1pos_t, e2pos_t):
+    def forward(self, *tensor_feats):
 
-        batch_size = word_t.shape[0]
+        batch_size = tensor_feats[0].shape[0]
 
-        word_embed_input = self.word_embeddings(word_t)
-        e1pos_embed_input = self.e1pos_embeddings(e1pos_t)
-        e2pos_embed_input = self.e2pos_embeddings(e2pos_t)
+        word_embed_input = self.word_embeddings(tensor_feats[0])
+        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
+        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
         rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
 
@@ -201,13 +214,13 @@ class attnMatRNN(baseNN):
         self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
 
 
-    def forward(self, word_t, e1pos_t, e2pos_t):
+    def forward(self, *tensor_feats):
 
-        batch_size = word_t.shape[0]
+        batch_size = tensor_feats[0].shape[0]
 
-        word_embed_input = self.word_embeddings(word_t)
-        e1pos_embed_input = self.e1pos_embeddings(e1pos_t)
-        e2pos_embed_input = self.e2pos_embeddings(e2pos_t)
+        word_embed_input = self.word_embeddings(tensor_feats[0])
+        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
+        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
         rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
 
@@ -256,13 +269,13 @@ class attnRNN(baseNN):
         self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
 
 
-    def forward(self, word_t, e1pos_t, e2pos_t):
+    def forward(self, *tensor_feats):
 
-        batch_size = word_t.shape[0]
+        batch_size = tensor_feats[0].shape[0]
 
-        word_embed_input = self.word_embeddings(word_t)
-        e1pos_embed_input = self.e1pos_embeddings(e1pos_t)
-        e2pos_embed_input = self.e2pos_embeddings(e2pos_t)
+        word_embed_input = self.word_embeddings(tensor_feats[0])
+        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
+        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
         rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
 
@@ -326,6 +339,8 @@ class entiAttnDotRNN(baseNN):
 
         rnn_out, rnn_hidden = self.rnn(self.input_dropout(rnn_input), rnn_hidden)
 
+        rnn_out = self.rnn_dropout(rnn_out)
+
         e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[3])
         e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[4])
 
@@ -335,9 +350,63 @@ class entiAttnDotRNN(baseNN):
         e2_dot_prob = F.softmax(torch.bmm(rnn_out, e2_hidden.unsqueeze(2)).squeeze(), dim=1)
         e2_dot_out = torch.bmm(e2_dot_prob.unsqueeze(1), rnn_out).squeeze()
 
-        fc1_in = self.rnn_dropout(torch.cat((e1_dot_out, e2_dot_out), dim=1))
+        fc1_in = torch.cat((e1_dot_out, e2_dot_out), dim=1)
 
         fc1_out = F.relu(self.fc1(fc1_in))
+        fc1_out = self.fc1_drop(fc1_out)
+        fc2_out = F.log_softmax(self.fc2(fc1_out), dim=1)
+
+        return fc2_out
+
+
+class mulEntiAttnDotRNN(baseNN):
+
+    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+                 max_sent_len, pre_embed, **params):
+
+        super(mulEntiAttnDotRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
+                                    max_sent_len, pre_embed, **params)
+
+        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+
+        self.rnn = nn.LSTM(self.rnn_input_dim,
+                           self.rnn_hidden_dim // 2,
+                           num_layers=self.params['rnn_layer'],
+                           batch_first=True,
+                           bidirectional=True)
+
+        self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
+
+        self.fc1 = nn.Linear(self.rnn_hidden_dim, self.params['fc1_hidden_dim'])
+        self.fc1_drop = nn.Dropout(p=self.params['fc1_dropout'])
+        self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
+
+    def forward(self, *tensor_feats):
+
+        batch_size = tensor_feats[0].shape[0]
+
+        word_embed_input = self.word_embeddings(tensor_feats[0])
+        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
+        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
+
+        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+
+        rnn_hidden = self.init_rnn_hidden(batch_size,
+                                          self.rnn_hidden_dim,
+                                          num_layer=self.params['rnn_layer'])
+
+        rnn_out, rnn_hidden = self.rnn(self.input_dropout(rnn_input), rnn_hidden)
+
+        rnn_out = self.rnn_dropout(rnn_out)
+
+        e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[3])
+        e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[4])
+
+        attn_dot_scores = torch.bmm(rnn_out, torch.add(e1_hidden, e2_hidden).unsqueeze(2)).squeeze()
+        dot_prob = F.softmax(attn_dot_scores, dim=1)
+        dot_out = torch.bmm(dot_prob.unsqueeze(1), rnn_out).squeeze()
+
+        fc1_out = F.relu(self.fc1(dot_out))
         fc1_out = self.fc1_drop(fc1_out)
         fc2_out = F.log_softmax(self.fc2(fc1_out), dim=1)
 

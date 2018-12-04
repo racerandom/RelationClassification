@@ -233,10 +233,10 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             val_pred = torch.argmax(val_prob, dim=1)
             val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
 
-            val_losses.append(*val_loss)
+            val_losses.append(val_loss)
             val_acces.append(val_acc)
 
-            test_prob = model(test_feats)
+            test_prob = model(*test_feats)
             test_loss = F.nll_loss(test_prob, test_targ).item()
             test_pred = torch.argmax(test_prob, dim=1)
             test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
@@ -295,7 +295,7 @@ def main():
     embed_file = "data/glove.100d.embed"
 
     param_space = {
-        'classification_model': ['entiAttnDotRNN'],
+        'classification_model': ['mulEntiAttnDotRNN'],
         'freeze_mode': [True],
         'pos_dim': range(5, 30 + 1, 5),
         'input_dropout': [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
