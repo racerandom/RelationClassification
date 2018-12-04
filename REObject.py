@@ -91,6 +91,16 @@ class Relation():
                           0 if index not in self.e2_tids else 1])
         return feats
 
+    def position_indicator_feats(self):
+        feats = []
+        for index, token in enumerate(self.tokens):
+            feat = None
+            if index in self.e1_tids:
+                if len(self.e1_tids) == 1:
+                    feat = '<e1>'
+
+        return feats
+
     def attach_feats(self, feat_name, feats):
         self.feat_inputs[feat_name] = feats
 
@@ -113,3 +123,4 @@ if __name__ == '__main__':
     print(rel_samp.e1_sur)
     print(rel_samp.e2_tids)
     print(rel_samp.e2_sur)
+    print(feats)

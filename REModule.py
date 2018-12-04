@@ -287,14 +287,14 @@ class attnRNN(baseNN):
 
         rnn_out = rnn_out[:,:,:self.rnn_hidden_dim // 2] + rnn_out[:,:,self.rnn_hidden_dim // 2:]
 
+        rnn_out = self.rnn_dropout(rnn_out)
+
         attn_bW = self.attn_W.repeat(batch_size, 1)
         attn_alpha = torch.bmm(rnn_out, attn_bW.unsqueeze(2))
         attn_prob = F.softmax(attn_alpha.squeeze(), dim=1)
         attn_out = F.tanh(torch.bmm(attn_prob.unsqueeze(1), rnn_out))
 
-        fc1_in = self.rnn_dropout(attn_out.squeeze())
-
-        fc1_out = F.relu(self.fc1(fc1_in))
+        fc1_out = F.relu(self.fc1(attn_out.squeeze()))
         fc1_out = self.fc1_drop(fc1_out)
         fc2_out = F.log_softmax(self.fc2(fc1_out), dim=1)
 

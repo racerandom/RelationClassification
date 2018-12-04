@@ -4,6 +4,7 @@ warnings.simplefilter("ignore", UserWarning)
 
 import torch
 import torch.utils.data as Data
+import REData
 
 
 def count_parameters(model):
@@ -28,6 +29,7 @@ def save_checkpoint(state, is_best, filename):
     else:
         return ""
 
+
 def batch_to_device(data, device):
     """
     copy input list into device for GPU computation
@@ -40,12 +42,14 @@ def batch_to_device(data, device):
         device_inputs.append(d.to(device=device))
     return device_inputs
 
+
 def copyData2device(data, device):
     feat_dict, target = data
     feat_types = list(feat_dict.keys())
     feat_list = batch_to_device(list(feat_dict.values()), device)
     target = target.to(device=device)
     return dict(zip(feat_types, feat_list)), target
+
 
 class MultipleDatasets(Data.Dataset):
     """Dataset wrapping tensors.
@@ -64,4 +68,6 @@ class MultipleDatasets(Data.Dataset):
 
     def __len__(self):
         return self.tensors[0].size(0)
+
+
 

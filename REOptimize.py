@@ -66,6 +66,7 @@ def eval_data(model, feats, target, rel_idx):
         logger.info("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
 
 
+
 def model_instance(word_size, e1pos_size, e2pos_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
@@ -74,7 +75,9 @@ def model_instance(word_size, e1pos_size, e2pos_size, targ_size,
         max_sent_len, pre_embed, **params
     ).to(device=device)
 
-    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=params['lr'])
+    optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()),
+                                     lr=params['lr'],
+                                     weight_decay=params['weight_decay'])
 
     logger.debug(model)
     for name, param in model.named_parameters():
@@ -246,7 +249,9 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
         epoch_scores = locals()[monitor + 'es']
 
-        if patience and len(val_losses) >= patience and epoch_scores[-patience] == best_score(epoch_scores, monitor):
+        if (patience and
+                len(val_losses) >= patience and
+                epoch_scores[-patience] == best_score(epoch_scores[-patience:], monitor)):
             print('[Early Stopping] patience reached, stopping...')
             break
 
@@ -255,7 +260,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
         global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
 
         logger.info(
-            'epoch: %i, time: %.4f, '
+            'epoch: %2i, time: %4.1fs, '
             'train loss: %.4f, train acc: %.4f | '
             'val loss: %.4f, val acc: %.4f | '
             'test loss: %.4f, test acc: %.4f' % (epoch,
@@ -295,18 +300,19 @@ def main():
     embed_file = "data/glove.100d.embed"
 
     param_space = {
-        'classification_model': ['mulEntiAttnDotRNN'],
+        'classification_model': ['attnRNN'],
         'freeze_mode': [True],
         'pos_dim': range(5, 30 + 1, 5),
-        'input_dropout': [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
+        'input_dropout': [0.3],
         'rnn_hidden_dim': range(100, 500 + 1, 20),
         'rnn_layer': [1],
-        'rnn_dropout': [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
+        'rnn_dropout': [0.3],
         'fc1_hidden_dim': range(100, 500 + 1, 20),
-        'fc1_dropout': [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7],
-        'batch_size': [16, 32, 64, 128],
+        'fc1_dropout': [0.5],
+        'batch_size': [10],
         'epoch_num': [50],
-        'lr': [0.01, 0.001],
+        'lr': [1e-0],
+        'weight_decay':[1e-5],
         'max_norm': [1, 5, 10],
         'patience': [10],
         'monitor': ['val_loss']
