@@ -5,6 +5,7 @@ from nltk.parse.dependencygraph import DependencyGraph, malt_demo
 import networkx as nx
 import json
 
+
 def nxGraphWroot(dep_graph):
     """Convert the data in a ``nodelist`` into a networkx labeled directed graph.
         Include the ROOT node
@@ -26,6 +27,7 @@ def nxGraphWroot(dep_graph):
 
     return g
 
+
 class RESyntaxer():
 
     def __init__(self):
@@ -44,7 +46,7 @@ class RESyntaxer():
 
     def get_dep_graph(self,
                       sent,
-                      dep_ver='SD'  ## 'SD': stanford dependency, 'UD': universal dependency
+                      dep_ver='SD'  # 'SD': stanford dependency, 'UD': universal dependency
                       ):
         props={'annotators': 'tokenize, ssplit, pos, depparse',
                'pipelineLanguage': 'en',
@@ -64,8 +66,8 @@ class RESyntaxer():
 
     def get_sdp(self,
                 dep_graph,
-                sour, ## sour token conll_id
-                targ): ## targ token conll_id
+                sour, # sour token conll_id
+                targ): # targ token conll_id
         sd_dep_nx = nxGraphWroot(dep_graph).to_undirected()
         return nx.shortest_path(sd_dep_nx, source=sour, target=targ)
 

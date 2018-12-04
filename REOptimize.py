@@ -243,12 +243,6 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
         epoch_scores = locals()[monitor + 'es']
 
-        if (patience and
-                len(val_losses) >= patience and
-                epoch_scores[-patience] == best_score(epoch_scores[-patience:], monitor)):
-            print('[Early Stopping] patience reached, stopping...')
-            break
-
         monitor_score = locals()[params['monitor']]
 
         global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
@@ -278,6 +272,12 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             'test_loss': test_loss,
             'test_acc': test_acc
         }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
+
+        if (patience and
+                len(val_losses) >= patience and
+                epoch_scores[-patience] == best_score(epoch_scores[-patience:], monitor)):
+            print('[Early Stopping] patience reached, stopping...')
+            break
 
     monitor_scores = locals()[params['monitor'] + 'es']
 

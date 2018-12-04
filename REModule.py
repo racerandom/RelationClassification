@@ -320,8 +320,8 @@ class entiAttnDotRNN(baseNN):
 
         rnn_out = self.rnn_dropout(rnn_out)
 
-        e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[3])
-        e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[4])
+        e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[1])
+        e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[2])
 
         e1_dot_prob = F.softmax(torch.bmm(rnn_out, e1_hidden.unsqueeze(2)).squeeze(), dim=1)
         e1_dot_out = torch.bmm(e1_dot_prob.unsqueeze(1), rnn_out).squeeze()
@@ -376,8 +376,8 @@ class mulEntiAttnDotRNN(baseNN):
 
         rnn_out = self.rnn_dropout(rnn_out)
 
-        e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[3])
-        e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[4])
+        e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[1])
+        e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[2])
 
         attn_dot_scores = torch.bmm(rnn_out, torch.add(e1_hidden, e2_hidden).unsqueeze(2)).squeeze()
         dot_prob = F.softmax(attn_dot_scores, dim=1)

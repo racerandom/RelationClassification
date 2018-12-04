@@ -8,8 +8,9 @@ import pickle
 import torch
 import torch.nn as nn
 
-## inner library
+# inner library
 from REObject import Relation
+
 
 def data_reader(filename):
     with open(filename, 'r') as fi:
@@ -156,20 +157,20 @@ def max_len_2d(seq_2d):
     return max([len(seq) for seq in seq_2d])
 
 
-def save_all_data(train_pickle_file, val_pickle_file, test_pickle_file):
+def save_all_data(train_pickle_file, val_pickle_file, test_pickle_file, PI=False):
 
     train_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_training/TRAIN_FILE.TXT"
     test_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_testing_keys/TEST_FILE_FULL.TXT"
 
     train_data = data_reader(train_file)
-    prepare_feats(train_data)
+    prepare_feats(train_data, PI=PI)
     train_rels = train_data[:7109]
     val_rels = train_data[7109:]
     pickle_data(train_rels, pickle_file=train_pickle_file)
     pickle_data(val_rels, pickle_file=val_pickle_file)
 
     test_data = data_reader(test_file)
-    prepare_feats(test_data)
+    prepare_feats(test_data, PI=PI)
     pickle_data(test_data, pickle_file=test_pickle_file)
 
 
@@ -211,11 +212,9 @@ def generate_data(data_file, word2ix, targ2ix, max_sent_len):
     e1ix_t = torch.tensor(padding_2d(e1ix_Feat, max_entity_len, padding=-1))
     e2ix_t = torch.tensor(padding_2d(e2ix_Feat, max_entity_len, padding=-1))
 
-
     print("[Data] '%s' is generated with: word %s, targs %s\n" % (data_file,
                                                                   word_t.shape,
                                                                   targ_t.shape))
-
 
     return word_t, e1ix_t, e2ix_t, targ_t
 
@@ -228,7 +227,7 @@ def main():
     embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
     embed_pickle_file = "data/glove.100d.embed"
 
-    save_all_data(train_file, val_file, test_file)
+    save_all_data(train_file, val_file, test_file, PI=True)
 
     word2ix, targ2ix, max_sent_len = generate_feat2ix(train_file)
 
