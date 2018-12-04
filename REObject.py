@@ -3,7 +3,6 @@ import xml.etree.ElementTree as ET
 from RESyntaxer import RESyntaxer
 
 
-
 class Relation():
 
     def __init__(self, id=None, sent=None, comm=None, rel=None):
@@ -56,8 +55,7 @@ class Relation():
     def e2_sur(self):
         return ' '.join([self.tokens[tid] for tid in self.e2_tids])
 
-    def tokenize_sent(self):
-
+    def tokenize_sent(self, PI=False):
         corenlp = RESyntaxer()
         word_tokenize = corenlp.get_token
 
@@ -74,10 +72,16 @@ class Relation():
 
         for index, entity in enumerate(root):
             if entity.text:
+                if PI:
+                    self.tokens.append('<%s>' % entity.tag)
+                    tok_id += 1
                 for tok in word_tokenize(entity.text):
                     self.tokens.append(tok)
                     entity_ids = getattr(self, 'e%i_tids' % (index + 1))
                     entity_ids.append(tok_id)
+                    tok_id += 1
+                if PI:
+                    self.tokens.append('</%s>' % entity.tag)
                     tok_id += 1
             if entity.tail:
                 curr_toks = word_tokenize(entity.tail)
@@ -89,16 +93,6 @@ class Relation():
         for index, token in enumerate(self.tokens):
             feats.append([0 if index not in self.e1_tids else 1,
                           0 if index not in self.e2_tids else 1])
-        return feats
-
-    def position_indicator_feats(self):
-        feats = []
-        for index, token in enumerate(self.tokens):
-            feat = None
-            if index in self.e1_tids:
-                if len(self.e1_tids) == 1:
-                    feat = '<e1>'
-
         return feats
 
     def attach_feats(self, feat_name, feats):
@@ -116,11 +110,9 @@ if __name__ == '__main__':
            "in the dialectic between order and disorder."
     rel_samp = Relation()
     rel_samp.sent = sent
-    rel_samp.tokenize_sent()
-    feats = rel_samp.is_entity_feats()
+    rel_samp.tokenize_sent(PI=True)
     print(rel_samp.tokens)
     print(rel_samp.e1_tids)
     print(rel_samp.e1_sur)
     print(rel_samp.e2_tids)
     print(rel_samp.e2_sur)
-    print(feats)

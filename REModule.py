@@ -42,30 +42,19 @@ def catOverTime(net_out, cat_method, dim=1):
 
 class baseNN(nn.Module):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
         super(baseNN, self).__init__()
 
         self.params = params
         self.rnn_hidden_dim = self.params['rnn_hidden_dim']
         self.word_size = word_size
-        self.e1pos_size = e1pos_size
-        self.e2pos_size = e2pos_size
         self.targ_size = targ_size
         self.max_sent_len = max_sent_len
 
         if isinstance(pre_embed, np.ndarray):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
-
-
-        self.e1pos_dim = self.params['pos_dim']
-        if self.params['pos_dim']:
-            self.e1pos_embeddings = nn.Embedding(e1pos_size, self.e1pos_dim, padding_idx=0)
-
-        self.e2pos_dim = self.params['pos_dim']
-        if self.params['pos_dim']:
-            self.e2pos_embeddings = nn.Embedding(e2pos_size, self.e2pos_dim, padding_idx=0)
 
         self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
 
@@ -91,13 +80,13 @@ class attnLayer(nn.Module):
 
 class baseRNN(baseNN):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(baseRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        super(baseRNN, self).__init__(word_size, targ_size,
+                                      max_sent_len, pre_embed, **params)
 
-        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+        self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
                            self.rnn_hidden_dim // 2,
@@ -116,10 +105,8 @@ class baseRNN(baseNN):
         batch_size = tensor_feats[0].shape[0]
 
         word_embed_input = self.word_embeddings(tensor_feats[0])
-        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
-        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
-        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+        rnn_input = self.input_dropout(word_embed_input)
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,
@@ -140,13 +127,13 @@ class baseRNN(baseNN):
 
 class attnDotRNN(baseNN):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnDotRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        super(attnDotRNN, self).__init__(word_size, targ_size,
+                                         max_sent_len, pre_embed, **params)
 
-        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+        self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
                            self.rnn_hidden_dim // 2,
@@ -165,10 +152,8 @@ class attnDotRNN(baseNN):
         batch_size = tensor_feats[0].shape[0]
 
         word_embed_input = self.word_embeddings(tensor_feats[0])
-        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
-        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
-        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+        rnn_input = self.input_dropout(word_embed_input)
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,
@@ -191,13 +176,13 @@ class attnDotRNN(baseNN):
 
 class attnMatRNN(baseNN):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnMatRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        super(attnMatRNN, self).__init__(word_size, targ_size,
+                                         max_sent_len, pre_embed, **params)
 
-        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+        self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
                            self.rnn_hidden_dim // 2,
@@ -219,10 +204,8 @@ class attnMatRNN(baseNN):
         batch_size = tensor_feats[0].shape[0]
 
         word_embed_input = self.word_embeddings(tensor_feats[0])
-        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
-        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
-        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+        rnn_input = self.input_dropout(word_embed_input)
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,
@@ -246,13 +229,13 @@ class attnMatRNN(baseNN):
 
 class attnRNN(baseNN):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
+        super(attnRNN, self).__init__(word_size, targ_size,
                                     max_sent_len, pre_embed, **params)
 
-        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+        self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
                            self.rnn_hidden_dim // 2,
@@ -274,10 +257,8 @@ class attnRNN(baseNN):
         batch_size = tensor_feats[0].shape[0]
 
         word_embed_input = self.word_embeddings(tensor_feats[0])
-        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
-        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
-        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+        rnn_input = torch.cat((word_embed_input), dim=2)
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,
@@ -303,13 +284,13 @@ class attnRNN(baseNN):
 
 class entiAttnDotRNN(baseNN):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(entiAttnDotRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
+        super(entiAttnDotRNN, self).__init__(word_size, targ_size,
                                     max_sent_len, pre_embed, **params)
 
-        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+        self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
                            self.rnn_hidden_dim // 2,
@@ -328,10 +309,8 @@ class entiAttnDotRNN(baseNN):
         batch_size = tensor_feats[0].shape[0]
 
         word_embed_input = self.word_embeddings(tensor_feats[0])
-        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
-        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
-        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+        rnn_input = self.input_dropout(word_embed_input)
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,
@@ -361,13 +340,13 @@ class entiAttnDotRNN(baseNN):
 
 class mulEntiAttnDotRNN(baseNN):
 
-    def __init__(self, word_size, e1pos_size, e2pos_size, targ_size,
+    def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(mulEntiAttnDotRNN, self).__init__(word_size, e1pos_size, e2pos_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        super(mulEntiAttnDotRNN, self).__init__(word_size, targ_size,
+                                                max_sent_len, pre_embed, **params)
 
-        self.rnn_input_dim = self.word_dim + self.e1pos_dim + self.e2pos_dim
+        self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
                            self.rnn_hidden_dim // 2,
@@ -386,10 +365,8 @@ class mulEntiAttnDotRNN(baseNN):
         batch_size = tensor_feats[0].shape[0]
 
         word_embed_input = self.word_embeddings(tensor_feats[0])
-        e1pos_embed_input = self.e1pos_embeddings(tensor_feats[1])
-        e2pos_embed_input = self.e2pos_embeddings(tensor_feats[2])
 
-        rnn_input = torch.cat((word_embed_input, e1pos_embed_input, e2pos_embed_input), dim=2)
+        rnn_input = self.input_dropout(word_embed_input)
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,

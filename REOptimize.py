@@ -67,11 +67,11 @@ def eval_data(model, feats, target, rel_idx):
 
 
 
-def model_instance(word_size, e1pos_size, e2pos_size, targ_size,
+def model_instance(word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
     model = getattr(REModule, params['classification_model'])(
-        word_size, e1pos_size, e2pos_size, targ_size,
+        word_size, targ_size,
         max_sent_len, pre_embed, **params
     ).to(device=device)
 
@@ -96,26 +96,20 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     global_best_checkpoint_file = "models/best_global_%s_checkpoint.pth" % param_space['classification_model'][0]
 
-    word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
+    word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
     train_dataset = REData.generate_data(train_file,
                                          word2ix,
-                                         e1pos2ix,
-                                         e2pos2ix,
                                          targ2ix,
                                          max_sent_len)
 
     val_datset = REData.generate_data(val_file,
                                       word2ix,
-                                      e1pos2ix,
-                                      e2pos2ix,
                                       targ2ix,
                                       max_sent_len)
 
     test_datset = REData.generate_data(test_file,
                                        word2ix,
-                                       e1pos2ix,
-                                       e2pos2ix,
                                        targ2ix,
                                        max_sent_len)
 
@@ -130,7 +124,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
         logger.info('[Selected %i Params]: %s' % (eval_i, params))
 
-        model, optimizer = model_instance(len(word2ix), len(e1pos2ix), len(e2pos2ix), len(targ2ix),
+        model, optimizer = model_instance(len(word2ix), len(targ2ix),
                                           max_sent_len, embed_weights, **params)
 
         global_best_score = best_score(monitor_score_history, monitor)
@@ -172,7 +166,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
     params = global_best_checkpoint['params']
 
     model = getattr(REModule, params['classification_model'])(
-                len(word2ix), len(e1pos2ix), len(e2pos2ix), len(targ2ix),
+                len(word2ix), len(targ2ix),
                 max_sent_len, embed_weights, **params
             ).to(device=device)
 
@@ -300,9 +294,8 @@ def main():
     embed_file = "data/glove.100d.embed"
 
     param_space = {
-        'classification_model': ['attnRNN'],
+        'classification_model': ['baseRNN'],
         'freeze_mode': [True],
-        'pos_dim': range(5, 30 + 1, 5),
         'input_dropout': [0.3],
         'rnn_hidden_dim': range(100, 500 + 1, 20),
         'rnn_layer': [1],
@@ -318,7 +311,7 @@ def main():
         'monitor': ['val_loss']
     }
 
-    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=100)
+    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=2)
 
 if __name__ == '__main__':
     main()
