@@ -294,8 +294,8 @@ def main():
     embed_file = "data/glove.100d.embed"
 
     param_space = {
-        'classification_model': ['baseRNN'],
-        'freeze_mode': [True],
+        'classification_model': ['attnRNN'],
+        'freeze_mode': [False],
         'input_dropout': [0.3],
         'rnn_hidden_dim': range(100, 500 + 1, 20),
         'rnn_layer': [1],
@@ -303,12 +303,12 @@ def main():
         'fc1_hidden_dim': range(100, 500 + 1, 20),
         'fc1_dropout': [0.5],
         'batch_size': [10],
-        'epoch_num': [50],
+        'epoch_num': [200],
         'lr': [1e-0],
         'weight_decay':[1e-5],
         'max_norm': [1, 5, 10],
         'patience': [10],
-        'monitor': ['val_loss']
+        'monitor': ['val_acc']
     }
 
     optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=2)

@@ -83,10 +83,10 @@ def pre_embed_to_weight(word2ix, embed_file, binary=True):
                 weights.append(np.random.uniform(-1, 1, word_dim))
     slim_weights = np.stack(weights, axis=0)
     print("[Embedding] Successfully the slim embedding weights from %i to %i words, "
-          "%i words (%.3f%%) are covered" % (len(pre_word2ix),
+          "%i words (%.2f%%) are covered" % (len(pre_word2ix),
                                              len(word2ix),
                                              count,
-                                             count/len(word2ix)))
+                                             100 * count/len(word2ix)))
     return slim_weights
 
 
@@ -224,10 +224,10 @@ def main():
     train_file = "data/train.pkl"
     val_file = "data/val.pkl"
     test_file = "data/test.pkl"
-    embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
-    embed_pickle_file = "data/glove.100d.embed"
+    embed_file = "/Users/fei-c/Resources/embed/giga-aacw.d200.bin"
+    embed_pickle_file = "data/giga-aacw.d200.embed"
 
-    save_all_data(train_file, val_file, test_file, PI=True)
+    # save_all_data(train_file, val_file, test_file, PI=False)
 
     word2ix, targ2ix, max_sent_len = generate_feat2ix(train_file)
 
@@ -247,6 +247,9 @@ def main():
                                                                 word2ix,
                                                                 targ2ix,
                                                                 max_sent_len)
+
+    print(word2ix['<e1>'], word2ix['</e1>'], word2ix['<e2>'], word2ix['</e2>'])
+
 
 
 if __name__ == '__main__':

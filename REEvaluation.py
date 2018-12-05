@@ -10,6 +10,7 @@ import ModuleOptim
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
 print('device:', device)
 
+
 def eval_output(model, test_feats, test_targ, targ2ix, pred_file, answer_file):
 
     ix2targ = {v: k for k, v in targ2ix.items()}
@@ -37,12 +38,10 @@ def eval_output(model, test_feats, test_targ, targ2ix, pred_file, answer_file):
 
 def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file):
 
-    word2ix, e1pos2ix, e2pos2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
+    word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
     test_datset = REData.generate_data(test_file,
                                        word2ix,
-                                       e1pos2ix,
-                                       e2pos2ix,
                                        targ2ix,
                                        max_sent_len)
 
@@ -52,12 +51,10 @@ def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pre
                             map_location=lambda storage,
                             loc: storage)
 
-
-
     params = checkpoint['params']
 
     model = getattr(REModule, params['classification_model'])(
-        len(word2ix), len(e1pos2ix), len(e2pos2ix), len(targ2ix),
+        len(word2ix), len(targ2ix),
         max_sent_len, embed_weights, **params
     ).to(device=device)
 
@@ -67,15 +64,26 @@ def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pre
 
     eval_output(model, test_datset[:-1], test_datset[-1], targ2ix, pred_file, answer_file)
 
+
+def call_official_evaluation(pred_file, answer_file):
+    import subprocess
+    subprocess.call(["data/SemEval2010_task8_all_data/SemEval2010_task8_scorer-v1.2/semeval2010_task8_scorer-v1.2.pl",
+                     pred_file,
+                     answer_file])
+
+
 def main():
-    checkpoint_file = "models/best_global_attnMatRNN_checkpoint.pth"
-    train_file = "data/train.pkl"
-    test_file = "data/test.pkl"
-    embed_file = "data/glove.100d.embed"
+
+    checkpoint_file = "models/best_global_entiAttnMatRNN_checkpoint.pth"
+    train_file = "data/train.PI.pkl"
+    test_file = "data/test.PI.pkl"
+    embed_file = "data/glove.PI.100d.embed"
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 
     extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file)
+
+    call_official_evaluation(pred_file, answer_file)
 
 if __name__ == '__main__':
     main()

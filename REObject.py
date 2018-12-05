@@ -2,7 +2,6 @@
 import xml.etree.ElementTree as ET
 from RESyntaxer import RESyntaxer
 
-corenlp = RESyntaxer()
 
 class Relation():
 
@@ -57,6 +56,9 @@ class Relation():
         return ' '.join([self.tokens[tid] for tid in self.e2_tids])
 
     def tokenize_sent(self, PI=False):
+
+        corenlp = RESyntaxer()
+
         word_tokenize = corenlp.get_token
 
         text = "<S>%s</S>" % self.sent
