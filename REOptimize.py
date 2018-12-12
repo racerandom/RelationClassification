@@ -25,7 +25,7 @@ logger = logging.getLogger('REOptimize')
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
 print('device:', device)
 
-seed = 1336
+seed = 13
 random.seed(seed)
 
 torch_seed = 1337
@@ -288,16 +288,19 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
            test_acces[best_local_index]
 
 def main():
-    train_file = "data/train.pkl"
-    val_file = "data/val.pkl"
-    test_file = "data/test.pkl"
-    embed_file = "data/glove.100d.embed"
+
+    pi_feat = '.PI'
+
+    train_file = "data/train%s.pkl" % pi_feat
+    val_file = "data/val%s.pkl" % pi_feat
+    test_file = "data/test%s.pkl" % pi_feat
+    embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['attnRNN'],
+        'classification_model': ['baseRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
-        'rnn_hidden_dim': range(100, 500 + 1, 20),
+        'rnn_hidden_dim': [200],
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
         'fc1_hidden_dim': range(100, 500 + 1, 20),

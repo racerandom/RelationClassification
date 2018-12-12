@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn.functional as F
+from sklearn.metrics import f1_score
 
 import REData
 import REModule
@@ -21,7 +22,8 @@ def eval_output(model, test_feats, test_targ, targ2ix, pred_file, answer_file):
         loss = F.nll_loss(pred_score, test_targ).item()
         pred_targ = torch.argmax(pred_score, dim=1)
         acc = (pred_targ == test_targ).sum().item() / float(pred_targ.numel())
-        print('checkpoint performance: loss %.4f, acc %.4f' % (loss, acc))
+        f1 = f1_score(pred_targ, test_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'], average='macro')
+        print('checkpoint performance: loss %.4f, acc %.4f, macro-F1 %.4f\n' % (loss, acc, f1))
 
     sent_ids = list(range(8001, 10718))
 
@@ -64,20 +66,22 @@ def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pre
 
     eval_output(model, test_datset[:-1], test_datset[-1], targ2ix, pred_file, answer_file)
 
+    print(params)
+
 
 def call_official_evaluation(pred_file, answer_file):
     import subprocess
-    subprocess.call(["data/SemEval2010_task8_all_data/SemEval2010_task8_scorer-v1.2/semeval2010_task8_scorer-v1.2.pl",
-                     pred_file,
-                     answer_file])
-
+    eval_out = subprocess.Popen(["data/SemEval2010_task8_all_data/SemEval2010_task8_scorer-v1.2/semeval2010_task8_scorer-v1.2.pl",
+                                 pred_file,
+                                 answer_file], stdout=subprocess.PIPE)
+    print("\n%s" % eval_out.communicate()[0].decode("utf-8").strip().split('\n')[-1])
 
 def main():
-
+    PI = 'PI.'
     checkpoint_file = "models/best_global_entiAttnMatRNN_checkpoint.pth"
-    train_file = "data/train.PI.pkl"
-    test_file = "data/test.PI.pkl"
-    embed_file = "data/glove.PI.100d.embed"
+    train_file = "data/train.%spkl" % PI
+    test_file = "data/test.%spkl" % PI
+    embed_file = "data/glove.%s100d.embed" % PI
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 

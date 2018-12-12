@@ -87,10 +87,60 @@ class attnLayer(nn.Module):
         self.attn_fc1 = nn.Linear(attn_input_dim, params['attn_hidden_dim'])
         self.hidden2prob = nn.Linear(params['attn_hidden_dim'], max_sent_len)
 
-    def forward(self, tensor_input):
+    def forward(self, *tensor_input):
         attn_fc1_out = F.relu(self.attn_fc1(tensor_input))
         prob_out = F.softmax(self.hidden2prob(attn_fc1_out))
         return prob_out
+
+class dotAttn(nn.Module):
+
+    def __init__(self):
+        super(dotAttn, self).__init__()
+
+    def forward(self, *tensor_feats):
+
+        input_embed_M = tensor_feats[0]
+
+        e1_embed = batch_entity_hidden(input_embed_M, tensor_feats[1])  # (batch, word_dim)
+        e2_embed = batch_entity_hidden(input_embed_M, tensor_feats[2])  # (batch, word_dim)
+
+        e1_dot_weight = F.softmax(torch.bmm(input_embed_M, e1_embed.unsqueeze(2)).squeeze(), dim=1)
+        e2_dot_weight = F.softmax(torch.bmm(input_embed_M, e2_embed.unsqueeze(2)).squeeze(), dim=1)
+
+        dot_weight = (e1_dot_weight + e2_dot_weight) / 2  # average weights
+        attn_applied_M = torch.bmm(dot_weight.unsqueeze(1), input_embed_M).squeeze()
+
+        return attn_applied_M
+
+
+class matAttn(nn.Module):
+
+    def __init__(self, hidden_dim):
+        super(matAttn, self).__init__()
+        self.attn_M = torch.nn.Parameter(torch.randn(hidden_dim, hidden_dim, requires_grad=True))
+
+    def forward(self, *tensor_feats):
+
+        batch_size = tensor_feats[0].shape[0]
+
+        input_embed_M = tensor_feats[0]
+
+        e1_embed = batch_entity_hidden(input_embed_M, tensor_feats[1])  # (batch, word_dim)
+        e2_embed = batch_entity_hidden(input_embed_M, tensor_feats[2])  # (batch, word_dim)
+
+        attn_bM = self.attn_M.repeat(batch_size, 1, 1)
+
+        input_weight_M = torch.bmm(input_embed_M, attn_bM)
+
+        e1_mat_weight = F.softmax(torch.bmm(input_weight_M, e1_embed.unsqueeze(2)).squeeze(), dim=1)
+        e2_mat_weight = F.softmax(torch.bmm(input_weight_M, e2_embed.unsqueeze(2)).squeeze(), dim=1)
+
+        mat_weight = (e1_mat_weight + e2_mat_weight) / 2  # average weights
+
+        attn_applied_M = torch.bmm(mat_weight.unsqueeze(1), input_embed_M).squeeze()
+
+        return attn_applied_M
+
 
 
 class baseRNN(baseNN):
@@ -111,9 +161,7 @@ class baseRNN(baseNN):
 
         self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
 
-        self.fc1 = nn.Linear(self.rnn_hidden_dim, self.params['fc1_hidden_dim'])
-        self.fc1_drop = nn.Dropout(p=self.params['fc1_dropout'])
-        self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
+        self.fc = nn.Linear(self.rnn_hidden_dim, targ_size)
 
     def forward(self, *tensor_feats):
 
@@ -129,15 +177,13 @@ class baseRNN(baseNN):
 
         rnn_out, rnn_hidden = self.rnn(rnn_input, rnn_hidden)
 
-        fc1_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1)
+        # fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
 
-        fc1_in = self.rnn_dropout(fc1_in)
+        fc_in = catOverTime(rnn_out, 'max')
 
-        fc1_out = F.relu(self.fc1(fc1_in))
-        fc1_out = self.fc1_drop(fc1_out)
-        fc2_out = F.log_softmax(self.fc2(fc1_out), dim=1)
+        softmax_out = F.log_softmax(self.fc(self.rnn_dropout(fc_in)), dim=1)
 
-        return fc2_out
+        return softmax_out
 
 
 class attnDotRNN(baseNN):
@@ -209,9 +255,8 @@ class attnMatRNN(baseNN):
 
         self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
 
-        self.fc1 = nn.Linear(self.rnn_hidden_dim, self.params['fc1_hidden_dim'])
-        self.fc1_drop = nn.Dropout(p=self.params['fc1_dropout'])
-        self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
+        self.fc_dropout = nn.Dropout(p=self.params['fc1_dropout'])
+        self.fc = nn.Linear(self.rnn_hidden_dim, targ_size)
 
 
     def forward(self, *tensor_feats):
@@ -228,18 +273,18 @@ class attnMatRNN(baseNN):
 
         rnn_out, rnn_hidden = self.rnn(self.input_dropout(rnn_input), rnn_hidden)
 
+        rnn_out = self.rnn_dropout(rnn_out)
+
         rnn_last = torch.cat((rnn_hidden[0][0, :, :], rnn_hidden[0][1, :, :]), dim=1)
         attn_bM = self.attn_M.repeat(batch_size, 1, 1)
         attn_prob = F.softmax(torch.bmm(torch.bmm(rnn_out, attn_bM), rnn_last.unsqueeze(2)).squeeze(), dim=1)
         attn_out = torch.bmm(attn_prob.unsqueeze(1), rnn_out).squeeze()
 
-        fc1_in = self.rnn_dropout(attn_out)
+        attn_out = self.fc_dropout(attn_out.squeeze())
 
-        fc1_out = F.relu(self.fc1(fc1_in))
-        fc1_out = self.fc1_drop(fc1_out)
-        fc2_out = F.log_softmax(self.fc2(fc1_out), dim=1)
+        fc_out = F.log_softmax(self.fc(attn_out), dim=1)
 
-        return fc2_out
+        return fc_out
 
 
 class attnRNN(baseNN):
@@ -289,7 +334,9 @@ class attnRNN(baseNN):
         attn_prob = F.softmax(attn_alpha.squeeze(), dim=1)
         attn_out = F.tanh(torch.bmm(attn_prob.unsqueeze(1), rnn_out))
 
-        fc_out = F.log_softmax(self.fc_drop(self.fc(attn_out.squeeze())), dim=1)
+        attn_out = self.fc_drop(attn_out.squeeze())
+
+        fc_out = F.log_softmax(self.fc(attn_out), dim=1)
 
         return fc_out
 

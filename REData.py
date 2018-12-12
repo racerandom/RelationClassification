@@ -231,7 +231,8 @@ def main():
 
     word2ix, targ2ix, max_sent_len = generate_feat2ix(train_file)
 
-    slim_word_embed(word2ix, embed_file, embed_pickle_file)
+    print(targ2ix)
+    # slim_word_embed(word2ix, embed_file, embed_pickle_file)
 
     train_word, train_e1ix, train_e2ix, train_targs = generate_data(train_file,
                                                                     word2ix,
