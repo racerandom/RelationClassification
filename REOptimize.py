@@ -206,6 +206,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
         epoch_acces = []
         start_time = time.time()
         for step, train_batch in enumerate(train_data_loader):
+            print(step)
             train_batch = ModuleOptim.batch_to_device(train_batch, device)
             train_feats = train_batch[:-1]
             train_targ = train_batch[-1]
@@ -223,61 +224,61 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             train_pred = torch.argmax(pred_prob, dim=1)
             epoch_acces.append((train_pred == train_targ).sum().item() / float(train_pred.numel()))
 
-        model.eval()
-        with torch.no_grad():
-            val_prob = model(*val_feats)
-            val_loss = F.nll_loss(val_prob, val_targ).item()
-            val_pred = torch.argmax(val_prob, dim=1)
-            val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
+            model.eval()
+            with torch.no_grad():
+                val_prob = model(*val_feats)
+                val_loss = F.nll_loss(val_prob, val_targ).item()
+                val_pred = torch.argmax(val_prob, dim=1)
+                val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
 
-            val_losses.append(val_loss)
-            val_acces.append(val_acc)
+                val_losses.append(val_loss)
+                val_acces.append(val_acc)
 
-            test_prob = model(*test_feats)
-            test_loss = F.nll_loss(test_prob, test_targ).item()
-            test_pred = torch.argmax(test_prob, dim=1)
-            test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
+                test_prob = model(*test_feats)
+                test_loss = F.nll_loss(test_prob, test_targ).item()
+                test_pred = torch.argmax(test_prob, dim=1)
+                test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
 
-            test_losses.append(test_loss)
-            test_acces.append(test_acc)
+                test_losses.append(test_loss)
+                test_acces.append(test_acc)
 
-        epoch_scores = locals()[monitor + 'es']
+            epoch_scores = locals()[monitor + 'es']
 
-        monitor_score = locals()[params['monitor']]
+            monitor_score = locals()[params['monitor']]
 
-        global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
+            global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
 
-        logger.info(
-            'epoch: %2i, time: %4.1fs, '
-            'train loss: %.4f, train acc: %.4f | '
-            'val loss: %.4f, val acc: %.4f | '
-            'test loss: %.4f, test acc: %.4f' % (epoch,
-                                                 time.time() - start_time,
-                                                 sum(epoch_losses) / float(len(epoch_losses)),
-                                                 sum(epoch_acces) / float(len(epoch_acces)),
-                                                 val_loss,
-                                                 val_acc,
-                                                 test_loss,
-                                                 test_acc))
+            logger.info(
+                'epoch: %2i, time: %4.1fs, '
+                'train loss: %.4f, train acc: %.4f | '
+                'val loss: %.4f, val acc: %.4f | '
+                'test loss: %.4f, test acc: %.4f' % (epoch,
+                                                     time.time() - start_time,
+                                                     sum(epoch_losses) / float(len(epoch_losses)),
+                                                     sum(epoch_acces) / float(len(epoch_acces)),
+                                                     val_loss,
+                                                     val_acc,
+                                                     test_loss,
+                                                     test_acc))
 
-        global_save_info = ModuleOptim.save_checkpoint({
-            'epoch': epoch,
-            'params': params,
-            'state_dict': model.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'monitor': params['monitor'],
-            'best_score': global_best_score,
-            'val_loss': val_loss,
-            'val_acc': val_acc,
-            'test_loss': test_loss,
-            'test_acc': test_acc
-        }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
+            global_save_info = ModuleOptim.save_checkpoint({
+                'epoch': epoch,
+                'params': params,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'monitor': params['monitor'],
+                'best_score': global_best_score,
+                'val_loss': val_loss,
+                'val_acc': val_acc,
+                'test_loss': test_loss,
+                'test_acc': test_acc
+            }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
 
-        if (patience and
-                len(val_losses) >= patience and
-                epoch_scores[-patience] == best_score(epoch_scores[-patience:], monitor)):
-            print('[Early Stopping] patience reached, stopping...')
-            break
+        # if (patience and
+        #         len(val_losses) >= patience and
+        #         epoch_scores[-patience] == best_score(epoch_scores[-patience:], monitor)):
+        #     print('[Early Stopping] patience reached, stopping...')
+        #     break
 
     monitor_scores = locals()[params['monitor'] + 'es']
 

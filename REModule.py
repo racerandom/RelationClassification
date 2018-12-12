@@ -177,9 +177,9 @@ class baseRNN(baseNN):
 
         rnn_out, rnn_hidden = self.rnn(rnn_input, rnn_hidden)
 
-        # fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
+        fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
 
-        fc_in = catOverTime(rnn_out, 'max')
+        # fc_in = catOverTime(rnn_out, 'max')
 
         softmax_out = F.log_softmax(self.fc(self.rnn_dropout(fc_in)), dim=1)
 

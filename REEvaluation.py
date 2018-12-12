@@ -1,4 +1,5 @@
 # coding=utf-8
+import sys
 
 import torch
 import torch.nn.functional as F
@@ -78,7 +79,7 @@ def call_official_evaluation(pred_file, answer_file):
 
 def main():
     PI = 'PI.'
-    checkpoint_file = "models/best_global_entiAttnMatRNN_checkpoint.pth"
+    checkpoint_file = "models/best_global_%s_checkpoint.pth" % sys.argv[1]
     train_file = "data/train.%spkl" % PI
     test_file = "data/test.%spkl" % PI
     embed_file = "data/glove.%s100d.embed" % PI
