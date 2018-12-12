@@ -157,7 +157,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                                         map_location=lambda storage,
                                         loc: storage)
 
-    logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
+    # logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
     logger.info("Final best %s: %.4f, test_acc: %.4f" % (monitor,
                                                          global_best_checkpoint['best_score'],
                                                          global_best_checkpoint['test_acc']))
@@ -204,9 +204,10 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
     for epoch in range(1, params['epoch_num'] + 1):
         epoch_losses = []
         epoch_acces = []
-        start_time = time.time()
+
         for step, train_batch in enumerate(train_data_loader):
-            print(step)
+            start_time = time.time()
+
             train_batch = ModuleOptim.batch_to_device(train_batch, device)
             train_feats = train_batch[:-1]
             train_targ = train_batch[-1]
@@ -290,7 +291,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
 def main():
 
-    pi_feat = '.PI'
+    pi_feat = ''
 
     train_file = "data/train%s.pkl" % pi_feat
     val_file = "data/val%s.pkl" % pi_feat
@@ -298,24 +299,24 @@ def main():
     embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['baseRNN'],
+        'classification_model': ['attnInBaseRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
         'rnn_hidden_dim': [200],
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
-        'fc1_hidden_dim': range(100, 500 + 1, 20),
+        'fc1_hidden_dim': [100],
         'fc1_dropout': [0.5],
         'batch_size': [10],
         'epoch_num': [200],
         'lr': [1e-0],
         'weight_decay':[1e-5],
-        'max_norm': [1, 5, 10],
+        'max_norm': [1],
         'patience': [10],
         'monitor': ['val_acc']
     }
 
-    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=2)
+    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
 
 if __name__ == '__main__':
     main()

@@ -130,17 +130,64 @@ class matAttn(nn.Module):
 
         attn_bM = self.attn_M.repeat(batch_size, 1, 1)
 
-        input_weight_M = torch.bmm(input_embed_M, attn_bM)
+        input_attn_bM = torch.bmm(input_embed_M, attn_bM)
 
-        e1_mat_weight = F.softmax(torch.bmm(input_weight_M, e1_embed.unsqueeze(2)).squeeze(), dim=1)
-        e2_mat_weight = F.softmax(torch.bmm(input_weight_M, e2_embed.unsqueeze(2)).squeeze(), dim=1)
+        e1_mat_weight = F.softmax(torch.bmm(input_attn_bM, e1_embed.unsqueeze(2)).squeeze(), dim=1)
+        e2_mat_weight = F.softmax(torch.bmm(input_attn_bM, e2_embed.unsqueeze(2)).squeeze(), dim=1)
 
-        mat_weight = (e1_mat_weight + e2_mat_weight) / 2  # average weights
+        attn_weight = (e1_mat_weight + e2_mat_weight) / 2  # average weights
 
-        attn_applied_M = torch.bmm(mat_weight.unsqueeze(1), input_embed_M).squeeze()
+        return attn_weight
 
-        return attn_applied_M
 
+class attnInBaseRNN(baseNN):
+
+    def __init__(self, word_size, targ_size,
+                 max_sent_len, pre_embed, **params):
+
+        super(attnInBaseRNN, self).__init__(word_size, targ_size,
+                                            max_sent_len, pre_embed, **params)
+
+        self.rnn_input_dim = self.word_dim
+
+        self.attn_input = matAttn(self.rnn_input_dim)
+
+        self.rnn = nn.LSTM(self.rnn_input_dim,
+                           self.rnn_hidden_dim // 2,
+                           num_layers=self.params['rnn_layer'],
+                           batch_first=True,
+                           bidirectional=True)
+
+        self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
+
+        self.fc = nn.Linear(self.rnn_hidden_dim, targ_size)
+
+    def forward(self, *tensor_feats):
+
+
+        batch_size = tensor_feats[0].shape[0]
+
+        word_embed_input = self.word_embeddings(tensor_feats[0])
+
+        attn_weight = self.attn_input(*(word_embed_input, tensor_feats[1], tensor_feats[2]))
+
+        attn_applied_input = attn_weight.unsqueeze(2) * word_embed_input
+
+        rnn_input = self.input_dropout(attn_applied_input)
+
+        rnn_hidden = self.init_rnn_hidden(batch_size,
+                                          self.rnn_hidden_dim,
+                                          num_layer=self.params['rnn_layer'])
+
+        rnn_out, rnn_hidden = self.rnn(rnn_input, rnn_hidden)
+
+        # fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
+
+        fc_in = catOverTime(rnn_out, 'max')
+
+        softmax_out = F.log_softmax(self.fc(self.rnn_dropout(fc_in)), dim=1)
+
+        return softmax_out
 
 
 class baseRNN(baseNN):
@@ -177,9 +224,9 @@ class baseRNN(baseNN):
 
         rnn_out, rnn_hidden = self.rnn(rnn_input, rnn_hidden)
 
-        fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
+        # fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
 
-        # fc_in = catOverTime(rnn_out, 'max')
+        fc_in = catOverTime(rnn_out, 'max')
 
         softmax_out = F.log_softmax(self.fc(self.rnn_dropout(fc_in)), dim=1)
 
