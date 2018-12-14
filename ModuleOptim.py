@@ -22,6 +22,20 @@ def is_best_score(score, best_score, monitor):
     return is_best, best_score
 
 
+def get_best_score(scores, monitor):
+    if not scores:
+        return None
+    else:
+        if monitor.endswith('acc'):
+            return max(scores)
+        elif monitor.endswith('loss'):
+            return min(scores)
+        elif monitor.endswith('f1'):
+            return max(scores)
+        else:
+            raise Exception('[ERROR] Unknown monitor mode...')
+
+
 def save_checkpoint(state, is_best, filename):
     """Save checkpoint if a new best is achieved"""
     if is_best:
@@ -52,26 +66,7 @@ def copyData2device(data, device):
     return dict(zip(feat_types, feat_list)), target
 
 
-class MultipleDatasets(Data.Dataset):
-    """Dataset wrapping tensors.
-
-    Each sample will be retrieved by indexing tensors along the first dimension.
-
-    Arguments:
-        *tensors (Tensor): tensors that have the same size of the first dimension.
-    """
-    def __init__(self, *tensors):
-        assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
-        self.tensors = tensors
-
-    def __getitem__(self, index):
-        return tuple(tensor[index] for tensor in self.tensors)
-
-    def __len__(self):
-        return self.tensors[0].size(0)
-
-
-class ListDatasets(Data.Dataset):
+class CustomizedDatasets(Data.Dataset):
     """Dataset wrapping list.
 
     Each sample will be retrieved by indexing tensors along the first dimension.

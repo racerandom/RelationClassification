@@ -3,6 +3,7 @@ import warnings
 import logging
 import time
 import random
+from collections import defaultdict
 
 import torch
 import torch.nn.functional as F
@@ -18,7 +19,7 @@ import REData
 import REEvaluation
 warnings.simplefilter("ignore", UserWarning)
 
-REUtils.setup_stream_logger('REOptimize', level=logging.INFO)
+REUtils.setup_stream_logger('REOptimize', level=logging.DEBUG)
 logger = logging.getLogger('REOptimize')
 
 
@@ -34,17 +35,6 @@ torch.manual_seed(torch_seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 
-
-def best_score(scores, monitor):
-    if not scores:
-        return None
-    else:
-        if monitor.endswith('acc'):
-            return max(scores)
-        elif monitor.endswith('loss'):
-            return min(scores)
-        else:
-            raise Exception('[ERROR] Unknown monitor mode...')
 
 def eval_data(model, feats, target, rel_idx):
     model.eval()
@@ -91,6 +81,7 @@ def model_instance(word_size, targ_size,
 
     return model, optimizer
 
+
 def optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=10):
 
     monitor = param_space['monitor'][0]
@@ -128,7 +119,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         model, optimizer = model_instance(len(word2ix), len(targ2ix),
                                           max_sent_len, embed_weights, **params)
 
-        global_best_score = best_score(monitor_score_history, monitor)
+        global_best_score = ModuleOptim.get_best_score(monitor_score_history, monitor)
 
         local_monitor_score, local_test_loss, local_test_acc = train_model(
             model, optimizer,
@@ -149,7 +140,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                                                                 monitor_score_history[-1],
                                                                 test_acc_history[-1]))
 
-        best_index = monitor_score_history.index(best_score(monitor_score_history, monitor))
+        best_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history, monitor))
         logger.info("Current best %s: %.4f, test acc: %.4f\n" % (monitor,
                                                                  monitor_score_history[best_index],
                                                                  test_acc_history[best_index]))
@@ -183,7 +174,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
     # train_dataset = ModuleOptim.MultipleDatasets(*train_data)
 
-    train_dataset = ModuleOptim.ListDatasets(*train_data)
+    train_dataset = ModuleOptim.CustomizedDatasets(*train_data)
 
     train_data_loader = Data.DataLoader(
         dataset=train_dataset,
@@ -193,7 +184,6 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
         num_workers=1,
     )
 
-
     val_data = ModuleOptim.batch_to_device(val_data, device)
     val_feats = val_data[:-1]
     val_targ = val_data[-1]
@@ -202,16 +192,21 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
     test_feats = test_data[:-1]
     test_targ = test_data[-1]
 
-    val_losses, val_acces, val_f1es, test_losses, test_acces, test_f1es = [], [], [], [], [], []
+    # val_losses, val_acces, val_f1es, test_losses, test_acces, test_f1es = [], [], [], [], [], []
+    eval_history = defaultdict(list)
+
+    monitor_score_history = eval_history[params['monitor']]
 
     patience = params['patience']
 
     for epoch in range(1, params['epoch_num'] + 1):
 
-        logger.info("epoch %i is runing" % epoch)
+        epoch_start_time = time.time()
 
         epoch_losses = []
         epoch_acces = []
+
+        step_num = len(train_data_loader)
 
         for step, train_batch in enumerate(train_data_loader):
 
@@ -226,14 +221,15 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             model.zero_grad()
 
             pred_prob = model(*train_feats)
-            loss = F.nll_loss(pred_prob, train_targ)
-            loss.backward(retain_graph=True)
+            train_loss = F.nll_loss(pred_prob, train_targ)
+            train_loss.backward(retain_graph=True)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=params['max_norm'])
             optimizer.step()
 
-            epoch_losses.append(loss.data.item())
+            epoch_losses.append(train_loss.item())
             train_pred = torch.argmax(pred_prob, dim=1)
-            epoch_acces.append((train_pred == train_targ).sum().item() / float(train_pred.numel()))
+            train_acc = (train_pred == train_targ).sum().item() / float(train_pred.numel())
+            epoch_acces.append(train_acc)
 
             model.eval()
             with torch.no_grad():
@@ -244,9 +240,12 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 val_f1 = REEvaluation.f1_score(val_pred, val_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
                                            average='macro')
 
-                val_losses.append(val_loss)
-                val_acces.append(val_acc)
-                val_f1es.append(val_f1)
+                # val_losses.append(val_loss)
+                # val_acces.append(val_acc)
+                # val_f1es.append(val_f1)
+                eval_history['val_loss'].append(val_loss)
+                eval_history['val_acc'].append(val_acc)
+                eval_history['val_f1'].append(val_f1)
 
                 test_prob = model(*test_feats)
                 test_loss = F.nll_loss(test_prob, test_targ).item()
@@ -255,15 +254,20 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 test_f1 = REEvaluation.f1_score(test_pred, test_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
                                                 average='macro')
 
-                test_losses.append(test_loss)
-                test_acces.append(test_acc)
-                test_f1es.append(test_f1)
+                # test_losses.append(test_loss)
+                # test_acces.append(test_acc)
+                # test_f1es.append(test_f1)
+                eval_history['test_loss'].append(test_loss)
+                eval_history['test_acc'].append(test_acc)
+                eval_history['test_f1'].append(test_f1)
 
-            epoch_scores = locals()[monitor + 'es']
+            # epoch_scores = locals()[monitor + 'es']
 
-            monitor_score = locals()[params['monitor']]
+            monitor_score = locals()[monitor]
 
-            global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
+            global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
+                                                                          global_best_score,
+                                                                          monitor)
 
             logger.debug(
                 'epoch: %2i, time: %4.1fs, '
@@ -271,8 +275,8 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 'val loss: %.4f, val acc: %.4f | '
                 'test loss: %.4f, test acc: %.4f' % (epoch,
                                                      time.time() - start_time,
-                                                     sum(epoch_losses) / float(len(epoch_losses)),
-                                                     sum(epoch_acces) / float(len(epoch_acces)),
+                                                     train_loss,
+                                                     train_acc,
                                                      val_loss,
                                                      val_acc,
                                                      test_loss,
@@ -283,27 +287,42 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 'params': params,
                 'state_dict': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'monitor': params['monitor'],
+                'monitor': monitor,
                 'best_score': global_best_score,
                 'val_loss': val_loss,
                 'val_acc': val_acc,
+                'val_f1': val_f1,
                 'test_loss': test_loss,
-                'test_acc': test_acc
+                'test_acc': test_acc,
+                'test_f1': test_f1,
             }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
 
-        # if (patience and
-        #         len(val_losses) >= patience and
-        #         epoch_scores[-patience] == best_score(epoch_scores[-patience:], monitor)):
-        #     print('[Early Stopping] patience reached, stopping...')
-        #     break
+        eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[step_num:], monitor))
 
-    monitor_scores = locals()[params['monitor'] + 'es']
+        logger.info(
+            "epoch %i finished in %.2fs,"
+            "train loss: %.4f, train acc: %.4f"
+            % (
+                epoch,
+                time.time() - epoch_start_time,
+                sum(epoch_losses) / float(len(epoch_losses)),
+                sum(epoch_acces) / float(len(epoch_acces)),
+               )
+        )
 
-    best_local_index = monitor_scores.index(best_score(monitor_scores, params['monitor']))
+        if (patience and
+                len(eval_history['epoch_best']) >= patience and
+                eval_history['epoch_best'] == ModuleOptim.get_best_score(eval_history['epoch_best'][-patience:], monitor)):
+            print('[Early Stopping] patience reached, stopping...')
+            break
 
-    return monitor_scores[best_local_index], \
-           test_losses[best_local_index], \
-           test_acces[best_local_index]
+    # monitor_scores = locals()[params['monitor'] + 'es']
+
+    best_local_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history, params['monitor']))
+
+    return monitor_score_history[best_local_index], \
+           eval_history['test_loss'][best_local_index], \
+           eval_history['test_acc'][best_local_index]
 
 def main():
 
@@ -315,7 +334,7 @@ def main():
     embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['attnInBaseRNN'],
+        'classification_model': ['baseRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
         'rnn_hidden_dim': [200],
