@@ -346,25 +346,26 @@ def main():
     embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['baseRNN'],
+        'classification_model': ['entiAttnMatRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
-        'rnn_hidden_dim': [200],
+        'rnn_hidden_dim': range(100, 1000 + 1, 20),
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
-        'fc1_hidden_dim': [100],
+        'attn_dropout': [0.3],
+        'fc1_hidden_dim': range(100, 1000 + 1, 20),
         'fc1_dropout': [0.5],
         'batch_size': [32],
         'epoch_num': [200],
         'lr': [1e-0],
         'weight_decay':[1e-5],
-        'max_norm': [1],
+        'max_norm': [1, 3, 5],
         'patience': [10],
         'monitor': ['val_f1'],
         'check_interval': [10],    # checkpoint based on val performance given a step interval
     }
 
-    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
+    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=100)
 
 if __name__ == '__main__':
     main()

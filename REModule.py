@@ -22,7 +22,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def batch_entity_hidden(hidden_states, entity_index, cat_entity='sum'):
     e_h = [h[i] for h, i in zip(hidden_states, entity_index)]
     e_h_c = [catOverTime(h, cat_entity, dim=0) for h in e_h]
-    e_h_c = [ h[-1] for h in e_h]
     e_h_t = torch.stack(e_h_c)
     return e_h_t
 
@@ -465,8 +464,10 @@ class entiAttnMatRNN(baseNN):
 
         self.attn_M = torch.nn.Parameter(torch.randn(self.rnn_hidden_dim, self.rnn_hidden_dim, requires_grad=True))
 
+        self.attn_dropout = nn.Dropout(p=self.params['attn_dropout'])
+
         self.fc1 = nn.Linear(self.rnn_hidden_dim * 2, self.params['fc1_hidden_dim'])
-        self.fc1_drop = nn.Dropout(p=self.params['fc1_dropout'])
+        self.fc1_dropout = nn.Dropout(p=self.params['fc1_dropout'])
         self.fc2 = nn.Linear(self.params['fc1_hidden_dim'], targ_size)
 
     def forward(self, *tensor_feats):
@@ -498,10 +499,10 @@ class entiAttnMatRNN(baseNN):
         e2_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e2_hidden.unsqueeze(2)).squeeze(), dim=1)
         e2_mat_out = torch.bmm(e2_mat_prob.unsqueeze(1), rnn_out).squeeze()
 
-        fc1_in = torch.cat((e1_mat_out, e2_mat_out), dim=1)
+        fc1_in = self.attn_dropout(torch.cat((e1_mat_out, e2_mat_out), dim=1))
 
         fc1_out = F.relu(self.fc1(fc1_in))
-        fc1_out = self.fc1_drop(fc1_out)
+        fc1_out = self.fc1_dropout(fc1_out)
         fc2_out = F.log_softmax(self.fc2(fc1_out), dim=1)
 
         return fc2_out
