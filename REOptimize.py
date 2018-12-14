@@ -143,7 +143,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         # test_acc_history.append(local_test_acc)
         # params_history.append(params)
 
-        logger.info("[Monitoring %s]Local val loss: %.4f, val acc: %.4f, val f1: %.4f\n" % (
+        print(local_val_loss, local_val_acc, local_val_f1)
+
+        logger.info("[Monitoring %s]Local val loss: %.4f, val acc: %.4f, val f1: %.4f" % (
             monitor,
             global_eval_history['val_loss'][-1],
             global_eval_history['val_acc'][-1],
@@ -164,9 +166,8 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                                         loc: storage)
 
     # logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
-    logger.info("Final best %s: %.4f, test_acc: %.4f" % (monitor,
-                                                         global_best_checkpoint['best_score'],
-                                                         global_best_checkpoint['test_acc']))
+    logger.info("Final best %s: %.4f" % (monitor,
+                                         global_best_checkpoint['best_score']))
     logger.info("Final best params: %s" % global_best_checkpoint['params'])
 
     params = global_best_checkpoint['params']
@@ -244,9 +245,8 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             train_acc = (train_pred == train_targ).sum().item() / float(train_pred.numel())
             epoch_acces.append(train_acc)
 
-
-
             if (step != 0 and step % params['check_interval'] == 0) or step == step_num - 1:
+
                 model.eval()
                 with torch.no_grad():
                     val_prob = model(*val_feats)
@@ -331,7 +331,9 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
     best_local_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history, params['monitor']))
 
     return monitor_score_history[best_local_index], \
-           eval_history['val_loss'], eval_history['val_acc'], eval_history['val_f1']
+           eval_history['val_loss'][best_local_index], \
+           eval_history['val_acc'][best_local_index], \
+           eval_history['val_f1'][best_local_index]
 
 
 def main():
@@ -352,14 +354,14 @@ def main():
         'rnn_dropout': [0.3],
         'fc1_hidden_dim': [100],
         'fc1_dropout': [0.5],
-        'batch_size': [10],
+        'batch_size': [32],
         'epoch_num': [200],
         'lr': [1e-0],
         'weight_decay':[1e-5],
         'max_norm': [1],
-        'patience': [2],
+        'patience': [10],
         'monitor': ['val_f1'],
-        'check_interval': [200],    # checkpoint based on val performance given a step interval
+        'check_interval': [10],    # checkpoint based on val performance given a step interval
     }
 
     optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
