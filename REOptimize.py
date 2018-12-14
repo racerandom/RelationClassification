@@ -107,7 +107,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     embed_weights = REData.load_pickle(embed_file)
 
-    monitor_score_history, test_loss_history, test_acc_history, params_history = [], [], [], []
+    # monitor_score_history, test_loss_history, test_acc_history, params_history = [], [], [], []
+    global_eval_history = defaultdict(list)
+    monitor_score_history = global_eval_history['monitor_score']
 
     for eval_i in range(1, max_evals + 1):
         params = {}
@@ -119,9 +121,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         model, optimizer = model_instance(len(word2ix), len(targ2ix),
                                           max_sent_len, embed_weights, **params)
 
-        global_best_score = ModuleOptim.get_best_score(monitor_score_history, monitor)
+        global_best_score = ModuleOptim.get_best_score(global_eval_history['monitor_score'], monitor)
 
-        local_monitor_score, local_test_loss, local_test_acc = train_model(
+        local_monitor_score, local_val_loss, local_val_acc, local_val_f1 = train_model(
             model, optimizer,
             global_best_score,
             train_dataset,
@@ -132,18 +134,30 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         )
 
         monitor_score_history.append(local_monitor_score)
-        test_loss_history.append(local_test_loss)
-        test_acc_history.append(local_test_acc)
-        params_history.append(params)
+        global_eval_history['val_loss'].append(local_val_loss)
+        global_eval_history['val_acc'].append(local_val_acc)
+        global_eval_history['val_f1'].append(local_val_f1)
 
-        logger.info("Current local %s: %.4f, test acc: %.4f" % (monitor,
-                                                                monitor_score_history[-1],
-                                                                test_acc_history[-1]))
+        # monitor_score_history.append(local_monitor_score)
+        # test_loss_history.append(local_test_loss)
+        # test_acc_history.append(local_test_acc)
+        # params_history.append(params)
 
-        best_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history, monitor))
-        logger.info("Current best %s: %.4f, test acc: %.4f\n" % (monitor,
-                                                                 monitor_score_history[best_index],
-                                                                 test_acc_history[best_index]))
+        logger.info("[Monitoring %s]Local val loss: %.4f, val acc: %.4f, val f1: %.4f\n" % (
+            monitor,
+            global_eval_history['val_loss'][-1],
+            global_eval_history['val_acc'][-1],
+            global_eval_history['val_f1'][-1])
+        )
+
+        best_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history,
+                                                                            monitor))
+        logger.info("[Monitoring %s]Global val loss: %.4f, val acc: %.4f, val f1: %.4f\n" % (
+            monitor,
+            global_eval_history['val_loss'][best_index],
+            global_eval_history['val_acc'][best_index],
+            global_eval_history['val_f1'][best_index])
+        )
 
     global_best_checkpoint = torch.load(global_best_checkpoint_file,
                                         map_location=lambda storage,
@@ -192,7 +206,6 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
     test_feats = test_data[:-1]
     test_targ = test_data[-1]
 
-    # val_losses, val_acces, val_f1es, test_losses, test_acces, test_f1es = [], [], [], [], [], []
     eval_history = defaultdict(list)
 
     monitor_score_history = eval_history[params['monitor']]
@@ -237,72 +250,66 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 val_loss = F.nll_loss(val_prob, val_targ).item()
                 val_pred = torch.argmax(val_prob, dim=1)
                 val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
-                val_f1 = REEvaluation.f1_score(val_pred, val_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
-                                           average='macro')
+                val_f1 = REEvaluation.f1_score(val_pred, val_targ,
+                                               labels=[v for k, v in targ2ix.items() if k != 'Other'],
+                                               average='macro')
 
-                # val_losses.append(val_loss)
-                # val_acces.append(val_acc)
-                # val_f1es.append(val_f1)
                 eval_history['val_loss'].append(val_loss)
                 eval_history['val_acc'].append(val_acc)
                 eval_history['val_f1'].append(val_f1)
 
-                test_prob = model(*test_feats)
-                test_loss = F.nll_loss(test_prob, test_targ).item()
-                test_pred = torch.argmax(test_prob, dim=1)
-                test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
-                test_f1 = REEvaluation.f1_score(test_pred, test_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
-                                                average='macro')
+                if step % params['interval'] == 0:
 
-                # test_losses.append(test_loss)
-                # test_acces.append(test_acc)
-                # test_f1es.append(test_f1)
-                eval_history['test_loss'].append(test_loss)
-                eval_history['test_acc'].append(test_acc)
-                eval_history['test_f1'].append(test_f1)
+                    test_prob = model(*test_feats)
+                    test_loss = F.nll_loss(test_prob, test_targ).item()
+                    test_pred = torch.argmax(test_prob, dim=1)
+                    test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
+                    test_f1 = REEvaluation.f1_score(test_pred, test_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
+                                                    average='macro')
 
-            # epoch_scores = locals()[monitor + 'es']
+                    eval_history['test_loss'].append(test_loss)
+                    eval_history['test_acc'].append(test_acc)
+                    eval_history['test_f1'].append(test_f1)
 
-            monitor_score = locals()[monitor]
+                    logger.debug(
+                        'epoch: %2i, time: %4.1fs, '
+                        'train loss: %.4f, train acc: %.4f | '
+                        'val loss: %.4f, val acc: %.4f | '
+                        'test loss: %.4f, test acc: %.4f'
+                        % (
+                            epoch,
+                            time.time() - start_time,
+                            train_loss,
+                            train_acc,
+                            val_loss,
+                            val_acc,
+                            test_loss,
+                            test_acc
+                        )
+                    )
 
-            global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
-                                                                          global_best_score,
-                                                                          monitor)
+                monitor_score = locals()[monitor]
 
-            global_save_info = ModuleOptim.save_checkpoint({
-                'epoch': epoch,
-                'params': params,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'monitor': monitor,
-                'best_score': global_best_score,
-                'val_loss': val_loss,
-                'val_acc': val_acc,
-                'val_f1': val_f1,
-                'test_loss': test_loss,
-                'test_acc': test_acc,
-                'test_f1': test_f1,
-            }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
+                global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
+                                                                              global_best_score,
+                                                                              monitor)
 
-            logger.debug(
-                'epoch: %2i, time: %4.1fs, '
-                'train loss: %.4f, train acc: %.4f | '
-                'val loss: %.4f, val acc: %.4f | '
-                'test loss: %.4f, test acc: %.4f %s' % (epoch,
-                                                        time.time() - start_time,
-                                                        train_loss,
-                                                        train_acc,
-                                                        val_loss,
-                                                        val_acc,
-                                                        test_loss,
-                                                        test_acc,
-                                                        global_save_info)
-            )
+                global_save_info = ModuleOptim.save_checkpoint({
+                    'epoch': epoch,
+                    'params': params,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'monitor': monitor,
+                    'best_score': global_best_score,
+                    'val_loss': val_loss,
+                    'val_acc': val_acc,
+                    'val_f1': val_f1,
+                }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
 
         eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[step_num:], monitor))
 
         logger.info(
-            "epoch %i finished in %.2fs,"
+            "epoch %i finished in %.2fs, "
             "train loss: %.4f, train acc: %.4f"
             % (
                 epoch,
@@ -318,13 +325,11 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             print('[Early Stopping] patience reached, stopping...')
             break
 
-    # monitor_scores = locals()[params['monitor'] + 'es']
-
     best_local_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history, params['monitor']))
 
     return monitor_score_history[best_local_index], \
-           eval_history['test_loss'][best_local_index], \
-           eval_history['test_acc'][best_local_index]
+           eval_history['val_loss'], eval_history['val_acc'], eval_history['val_f1']
+
 
 def main():
 
@@ -350,7 +355,8 @@ def main():
         'weight_decay':[1e-5],
         'max_norm': [1],
         'patience': [10],
-        'monitor': ['val_f1']
+        'monitor': ['val_f1'],
+        'interval': [100]
     }
 
     optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)

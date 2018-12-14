@@ -111,7 +111,7 @@ def collate_fn(batch_data):
             out_list.append(torch.stack(data_feat))
         elif isinstance(batch_data[0][i], list):
             out_list.append(data_feat)
-        elif isinstance(batch_data, np.ndarray):
+        elif isinstance(batch_data[0][i], np.ndarray):
             out_list.append(np.asarray(data_feat))
         else:
             raise Exception("[ERROR] Unknown data type in 'collate_fn'...")

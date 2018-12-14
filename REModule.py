@@ -19,17 +19,10 @@ logger = logging.getLogger('REOptimize')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-# def batch_entity_hidden(hidden_states, entity_index, cat_entity='sum'):
-#     e_h = [h[i[(i >= 0 ).nonzero().squeeze(dim=1)]] for h, i in zip(hidden_states, entity_index)]
-#     e_h_c = [catOverTime(h, cat_entity, dim=0) for h in e_h]
-#     e_h_t = torch.stack(e_h_c)
-#     return e_h_t
-
-
 def batch_entity_hidden(hidden_states, entity_index, cat_entity='sum'):
     e_h = [h[i] for h, i in zip(hidden_states, entity_index)]
     e_h_c = [catOverTime(h, cat_entity, dim=0) for h in e_h]
+    e_h_c = [ h[-1] for h in e_h]
     e_h_t = torch.stack(e_h_c)
     return e_h_t
 
