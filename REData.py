@@ -206,17 +206,17 @@ def generate_data(data_file, word2ix, targ2ix, max_sent_len):
     targs = [rel.rel for rel in rel_data]
     targ_t = torch.tensor(prepare_seq_1d(targs, targ2ix))
 
-    e1ix_Feat = [rel.e1_tids for rel in rel_data]
-    e2ix_Feat = [rel.e2_tids for rel in rel_data]
-    max_entity_len = max(max([len(e1ix) for e1ix in e1ix_Feat]), max([len(e2ix) for e2ix in e2ix_Feat]))
-    e1ix_t = torch.tensor(padding_2d(e1ix_Feat, max_entity_len, padding=-1))
-    e2ix_t = torch.tensor(padding_2d(e2ix_Feat, max_entity_len, padding=-1))
+    e1ix_l = [rel.e1_tids for rel in rel_data]
+    e2ix_l = [rel.e2_tids for rel in rel_data]
+    # max_entity_len = max(max([len(e1ix) for e1ix in e1ix_Feat]), max([len(e2ix) for e2ix in e2ix_Feat]))
+    # e1ix_t = torch.tensor(padding_2d(e1ix_Feat, max_entity_len, padding=-1))
+    # e2ix_t = torch.tensor(padding_2d(e2ix_Feat, max_entity_len, padding=-1))
 
     print("[Data] '%s' is generated with: word %s, targs %s\n" % (data_file,
                                                                   word_t.shape,
                                                                   targ_t.shape))
 
-    return word_t, e1ix_t, e2ix_t, targ_t
+    return word_t, e1ix_l, e2ix_l, targ_t
 
 
 def main():

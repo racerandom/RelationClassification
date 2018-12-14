@@ -15,9 +15,10 @@ import REUtils
 import REModule
 import ModuleOptim
 import REData
+import REEvaluation
 warnings.simplefilter("ignore", UserWarning)
 
-REUtils.setup_stream_logger('REOptimize', level=logging.DEBUG)
+REUtils.setup_stream_logger('REOptimize', level=logging.INFO)
 logger = logging.getLogger('REOptimize')
 
 
@@ -180,14 +181,18 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
     monitor = params['monitor']
 
-    train_dataset = ModuleOptim.MultipleDatasets(*train_data)
+    # train_dataset = ModuleOptim.MultipleDatasets(*train_data)
+
+    train_dataset = ModuleOptim.ListDatasets(*train_data)
 
     train_data_loader = Data.DataLoader(
         dataset=train_dataset,
         batch_size=params['batch_size'],
+        collate_fn=ModuleOptim.collate_fn,
         shuffle=True,
         num_workers=1,
     )
+
 
     val_data = ModuleOptim.batch_to_device(val_data, device)
     val_feats = val_data[:-1]
@@ -197,18 +202,23 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
     test_feats = test_data[:-1]
     test_targ = test_data[-1]
 
-    val_losses, val_acces, test_losses, test_acces = [], [], [], []
+    val_losses, val_acces, val_f1es, test_losses, test_acces, test_f1es = [], [], [], [], [], []
 
     patience = params['patience']
 
     for epoch in range(1, params['epoch_num'] + 1):
+
+        logger.info("epoch %i is runing" % epoch)
+
         epoch_losses = []
         epoch_acces = []
 
         for step, train_batch in enumerate(train_data_loader):
+
             start_time = time.time()
 
             train_batch = ModuleOptim.batch_to_device(train_batch, device)
+
             train_feats = train_batch[:-1]
             train_targ = train_batch[-1]
 
@@ -231,17 +241,23 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 val_loss = F.nll_loss(val_prob, val_targ).item()
                 val_pred = torch.argmax(val_prob, dim=1)
                 val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
+                val_f1 = REEvaluation.f1_score(val_pred, val_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
+                                           average='macro')
 
                 val_losses.append(val_loss)
                 val_acces.append(val_acc)
+                val_f1es.append(val_f1)
 
                 test_prob = model(*test_feats)
                 test_loss = F.nll_loss(test_prob, test_targ).item()
                 test_pred = torch.argmax(test_prob, dim=1)
                 test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
+                test_f1 = REEvaluation.f1_score(test_pred, test_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
+                                                average='macro')
 
                 test_losses.append(test_loss)
                 test_acces.append(test_acc)
+                test_f1es.append(test_f1)
 
             epoch_scores = locals()[monitor + 'es']
 
@@ -249,7 +265,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
             global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score, global_best_score, params['monitor'])
 
-            logger.info(
+            logger.debug(
                 'epoch: %2i, time: %4.1fs, '
                 'train loss: %.4f, train acc: %.4f | '
                 'val loss: %.4f, val acc: %.4f | '
@@ -313,7 +329,7 @@ def main():
         'weight_decay':[1e-5],
         'max_norm': [1],
         'patience': [10],
-        'monitor': ['val_acc']
+        'monitor': ['val_f1']
     }
 
     optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
