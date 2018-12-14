@@ -244,21 +244,40 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             train_acc = (train_pred == train_targ).sum().item() / float(train_pred.numel())
             epoch_acces.append(train_acc)
 
-            model.eval()
-            with torch.no_grad():
-                val_prob = model(*val_feats)
-                val_loss = F.nll_loss(val_prob, val_targ).item()
-                val_pred = torch.argmax(val_prob, dim=1)
-                val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
-                val_f1 = REEvaluation.f1_score(val_pred, val_targ,
-                                               labels=[v for k, v in targ2ix.items() if k != 'Other'],
-                                               average='macro')
 
-                eval_history['val_loss'].append(val_loss)
-                eval_history['val_acc'].append(val_acc)
-                eval_history['val_f1'].append(val_f1)
 
-                if step % params['interval'] == 0:
+            if (step != 0 and step % params['check_interval'] == 0) or step == step_num - 1:
+                model.eval()
+                with torch.no_grad():
+                    val_prob = model(*val_feats)
+                    val_loss = F.nll_loss(val_prob, val_targ).item()
+                    val_pred = torch.argmax(val_prob, dim=1)
+                    val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
+                    val_f1 = REEvaluation.f1_score(val_pred, val_targ,
+                                                   labels=[v for k, v in targ2ix.items() if k != 'Other'],
+                                                   average='macro')
+
+                    eval_history['val_loss'].append(val_loss)
+                    eval_history['val_acc'].append(val_acc)
+                    eval_history['val_f1'].append(val_f1)
+
+                    monitor_score = locals()[monitor]
+
+                    global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
+                                                                                  global_best_score,
+                                                                                  monitor)
+
+                    global_save_info = ModuleOptim.save_checkpoint({
+                        'epoch': epoch,
+                        'params': params,
+                        'state_dict': model.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'monitor': monitor,
+                        'best_score': global_best_score,
+                        'val_loss': val_loss,
+                        'val_acc': val_acc,
+                        'val_f1': val_f1,
+                    }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
 
                     test_prob = model(*test_feats)
                     test_loss = F.nll_loss(test_prob, test_targ).item()
@@ -272,12 +291,13 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                     eval_history['test_f1'].append(test_f1)
 
                     logger.debug(
-                        'epoch: %2i, time: %4.1fs, '
+                        'epoch: %2i, step: %4i, time: %4.1fs | '
                         'train loss: %.4f, train acc: %.4f | '
                         'val loss: %.4f, val acc: %.4f | '
                         'test loss: %.4f, test acc: %.4f'
                         % (
                             epoch,
+                            step,
                             time.time() - start_time,
                             train_loss,
                             train_acc,
@@ -288,25 +308,8 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                         )
                     )
 
-                monitor_score = locals()[monitor]
-
-                global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
-                                                                              global_best_score,
-                                                                              monitor)
-
-                global_save_info = ModuleOptim.save_checkpoint({
-                    'epoch': epoch,
-                    'params': params,
-                    'state_dict': model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
-                    'monitor': monitor,
-                    'best_score': global_best_score,
-                    'val_loss': val_loss,
-                    'val_acc': val_acc,
-                    'val_f1': val_f1,
-                }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
-
-        eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[step_num:], monitor))
+        eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[-step_num * params['check_interval']:],
+                                                                     monitor))
 
         logger.info(
             "epoch %i finished in %.2fs, "
@@ -321,7 +324,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
         if (patience and
                 len(eval_history['epoch_best']) >= patience and
-                eval_history['epoch_best'] == ModuleOptim.get_best_score(eval_history['epoch_best'][-patience:], monitor)):
+                eval_history['epoch_best'][-patience] == ModuleOptim.get_best_score(eval_history['epoch_best'][-patience:], monitor)):
             print('[Early Stopping] patience reached, stopping...')
             break
 
@@ -354,9 +357,9 @@ def main():
         'lr': [1e-0],
         'weight_decay':[1e-5],
         'max_norm': [1],
-        'patience': [10],
+        'patience': [2],
         'monitor': ['val_f1'],
-        'interval': [100]
+        'check_interval': [200],    # checkpoint based on val performance given a step interval
     }
 
     optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
