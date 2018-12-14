@@ -1,6 +1,7 @@
 # coding=utf-8
 import warnings
 warnings.simplefilter("ignore", UserWarning)
+import os
 
 import numpy as np
 import torch
@@ -39,6 +40,9 @@ def get_best_score(scores, monitor):
 def save_checkpoint(state, is_best, filename):
     """Save checkpoint if a new best is achieved"""
     if is_best:
+        file_dir = os.path.dirname(filename)
+        if not os.path.exists(file_dir):
+            os.makedirs(file_dir)
         torch.save(state, filename)  # save checkpoint
         return "=> Saving a new best"
     else:

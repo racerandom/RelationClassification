@@ -269,19 +269,6 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                                                                           global_best_score,
                                                                           monitor)
 
-            logger.debug(
-                'epoch: %2i, time: %4.1fs, '
-                'train loss: %.4f, train acc: %.4f | '
-                'val loss: %.4f, val acc: %.4f | '
-                'test loss: %.4f, test acc: %.4f' % (epoch,
-                                                     time.time() - start_time,
-                                                     train_loss,
-                                                     train_acc,
-                                                     val_loss,
-                                                     val_acc,
-                                                     test_loss,
-                                                     test_acc))
-
             global_save_info = ModuleOptim.save_checkpoint({
                 'epoch': epoch,
                 'params': params,
@@ -296,6 +283,21 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                 'test_acc': test_acc,
                 'test_f1': test_f1,
             }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
+
+            logger.debug(
+                'epoch: %2i, time: %4.1fs, '
+                'train loss: %.4f, train acc: %.4f | '
+                'val loss: %.4f, val acc: %.4f | '
+                'test loss: %.4f, test acc: %.4f %s' % (epoch,
+                                                        time.time() - start_time,
+                                                        train_loss,
+                                                        train_acc,
+                                                        val_loss,
+                                                        val_acc,
+                                                        test_loss,
+                                                        test_acc,
+                                                        global_save_info)
+            )
 
         eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[step_num:], monitor))
 
