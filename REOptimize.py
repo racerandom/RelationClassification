@@ -87,7 +87,7 @@ def batch_eval(model, data_loader, targ2ix, report_result=False):
     model.eval()
     with torch.no_grad():
 
-        pred, targ = torch.LongTensor(), torch.LongTensor()
+        pred, targ = torch.LongTensor().to(device), torch.LongTensor().to(device)
         loss_step, acc_step, f1_step = [], [], []
 
         for batch in data_loader:
@@ -135,7 +135,8 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     monitor = param_space['monitor'][0]
 
-    global_best_checkpoint_file = "models/best_global_%s_checkpoint.pth" % param_space['classification_model'][0]
+    global_checkpoint_file = "models/best_global_%s_%i_checkpoint.pth" % (param_space['classification_model'][0],
+                                                                          int(time.time()))
 
     word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
@@ -178,6 +179,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
             val_datset,
             test_datset,
             targ2ix,
+            global_checkpoint_file,
             **params
         )
 
@@ -185,11 +187,6 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         global_eval_history['val_loss'].append(local_val_loss)
         global_eval_history['val_acc'].append(local_val_acc)
         global_eval_history['val_f1'].append(local_val_f1)
-
-        # monitor_score_history.append(local_monitor_score)
-        # test_loss_history.append(local_test_loss)
-        # test_acc_history.append(local_test_acc)
-        # params_history.append(params)
 
         print(local_val_loss, local_val_acc, local_val_f1)
 
@@ -209,7 +206,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
             global_eval_history['val_f1'][best_index])
         )
 
-    global_best_checkpoint = torch.load(global_best_checkpoint_file,
+    global_best_checkpoint = torch.load(global_checkpoint_file,
                                         map_location=lambda storage,
                                         loc: storage)
 
@@ -231,7 +228,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
     eval_data(model, test_datset[:-1], test_datset[-1], targ2ix)
 
 
-def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, **params):
+def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, global_checkpoint_file, **params):
 
     monitor = params['monitor']
 
@@ -298,7 +295,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
             if (step != 0 and step % params['check_interval'] == 0) or step == step_num - 1:
 
-                val_loss, val_acc, val_f1 = batch_eval(model, val_data_loader, targ2ix, report_result=True)
+                val_loss, val_acc, val_f1 = batch_eval(model, val_data_loader, targ2ix)
 
                 eval_history['val_loss'].append(val_loss)
                 eval_history['val_acc'].append(val_acc)
@@ -319,7 +316,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                     'val_loss': val_loss,
                     'val_acc': val_acc,
                     'val_f1': val_f1,
-                }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
+                }, global_is_best, global_checkpoint_file)
 
                 test_loss, test_acc, test_f1 = batch_eval(model, test_data_loader, targ2ix)
 
@@ -395,7 +392,7 @@ def main():
         'max_norm': [1, 3, 5],
         'patience': [10],
         'monitor': ['val_f1'],
-        'check_interval': [10],    # checkpoint based on val performance given a step interval
+        'check_interval': [20],    # checkpoint based on val performance given a step interval
     }
 
     optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=100)
