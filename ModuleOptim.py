@@ -22,6 +22,12 @@ def is_best_score(score, best_score, monitor):
     return is_best, best_score
 
 
+def get_best (monitor):
+    return max if monitor.endswith('loss') else min
+
+def update_kbest_scores(kbest_scores, new_score, monitor):
+    pass
+
 def get_best_score(scores, monitor):
     if not scores:
         return None
@@ -34,7 +40,6 @@ def get_best_score(scores, monitor):
             return max(scores)
         else:
             raise Exception('[ERROR] Unknown monitor mode...')
-
 
 def save_checkpoint(state, is_best, filename):
     """Save checkpoint if a new best is achieved"""

@@ -1,5 +1,7 @@
 # coding=utf-8
 import warnings
+warnings.simplefilter("ignore", UserWarning)
+
 import logging
 import time
 import random
@@ -9,14 +11,26 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
 
-
-import REUtils
 import REModule
 import ModuleOptim
 import REData
 import REEval
-warnings.simplefilter("ignore", UserWarning)
 
+
+def setup_stream_logger(logger_name, level=logging.INFO):
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(level)
+
+    formatter = logging.Formatter('%(message)s')
+    streamHandler = logging.StreamHandler()
+    streamHandler.setFormatter(formatter)
+
+    logger.addHandler(streamHandler)
+
+    return logger
+
+
+setup_stream_logger('REOptimize', level=logging.DEBUG)
 logger = logging.getLogger('REOptimize')
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
@@ -84,10 +98,15 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
     global_eval_history = defaultdict(list)
     monitor_score_history = global_eval_history['monitor_score']
 
+    params_history = []
+
     for eval_i in range(1, max_evals + 1):
+
         params = {}
-        for key, values in param_space.items():
-            params[key] = random.choice(values)
+
+        while not params or params in params_history:
+            for key, values in param_space.items():
+                params[key] = random.choice(values)
 
         logger.info('[Selected %i Params]: %s' % (eval_i, params))
 
@@ -97,11 +116,8 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         global_best_score = ModuleOptim.get_best_score(global_eval_history['monitor_score'], monitor)
 
         local_monitor_score, local_val_loss, local_val_acc, local_val_f1 = train_model(
-            model, optimizer,
-            global_best_score,
-            train_dataset,
-            val_datset,
-            test_datset,
+            model, optimizer, global_best_score,
+            train_dataset, val_datset, test_datset,
             targ2ix,
             global_checkpoint_file,
             **params
@@ -152,7 +168,9 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
     REEval.batch_eval(model, test_datset, targ2ix, report_result=True)
 
 
-def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, global_checkpoint_file, **params):
+def train_model(model, optimizer, global_best_score,
+                train_data, val_data, test_data,
+                targ2ix, global_checkpoint_file, **params):
 
     monitor = params['monitor']
 

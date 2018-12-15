@@ -1,6 +1,5 @@
 # coding=utf-8
-import sys
-import logging
+import sys, os, logging
 
 import torch
 import torch.nn.functional as F
@@ -8,10 +7,7 @@ import torch.utils.data as Data
 from sklearn.metrics import f1_score, classification_report
 from statistics import mean, median, variance, stdev
 
-import REData
-import REUtils
-import REModule
-import ModuleOptim
+import REData, REModule, ModuleOptim
 
 logger = logging.getLogger('REOptimize')
 
@@ -72,6 +68,10 @@ def eval_output(model, test_datset, targ2ix, pred_file, answer_file):
 
     assert (len(sent_ids) == len(pred) == len(targ))
 
+    file_dir = os.path.dirname(pred_file)
+    if not os.path.exists(file_dir):
+        os.makedirs(file_dir)
+
     with open(pred_file, 'w') as pred_fo:
         for s_id, pred in zip(sent_ids, pred):
             pred_fo.write("%i\t%s\n" % (s_id, ix2targ[pred.item()]))
@@ -81,7 +81,7 @@ def eval_output(model, test_datset, targ2ix, pred_file, answer_file):
             answer_fo.write("%i\t%s\n" % (s_id, ix2targ[gold.item()]))
 
 
-def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file):
+def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file):
 
     word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
@@ -124,7 +124,7 @@ def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pre
     print(params)
 
 
-def call_official_evaluation(pred_file, answer_file):
+def call_official_eval(pred_file, answer_file):
     import subprocess
     eval_out = subprocess.Popen(["data/SemEval2010_task8_all_data/SemEval2010_task8_scorer-v1.2/semeval2010_task8_scorer-v1.2.pl",
                                  pred_file,
@@ -140,9 +140,9 @@ def main():
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 
-    extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file)
+    extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file)
 
-    call_official_evaluation(pred_file, answer_file)
+    call_official_eval(pred_file, answer_file)
 
 if __name__ == '__main__':
     main()
