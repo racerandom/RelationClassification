@@ -36,7 +36,7 @@ logger = logging.getLogger('REOptimize')
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
 print('device:', device)
 
-seed = 1337
+seed = 1
 random.seed(seed)
 
 torch_seed = 1337
@@ -44,6 +44,11 @@ torch.manual_seed(torch_seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 
+
+def get_checkpoint_file(checkpoint_base, monitor, score):
+    return "%s_%s_%f.pth" % (checkpoint_base,
+                             monitor,
+                             score)
 
 def model_instance(word_size, targ_size,
                  max_sent_len, pre_embed, **params):
@@ -73,8 +78,8 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     monitor = param_space['monitor'][0]
 
-    global_checkpoint_file = "models/best_global_%s_%i_checkpoint.pth" % (param_space['classification_model'][0],
-                                                                          int(time.time()))
+    checkpoint_base = "models/checkpoint_%s_%i" % (param_space['classification_model'][0],
+                                                          int(time.time()))
 
     word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
 
@@ -83,12 +88,12 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
                                          targ2ix,
                                          max_sent_len)
 
-    val_datset = REData.generate_data(val_file,
+    val_dataset = REData.generate_data(val_file,
                                       word2ix,
                                       targ2ix,
                                       max_sent_len)
 
-    test_datset = REData.generate_data(test_file,
+    test_dataset = REData.generate_data(test_file,
                                        word2ix,
                                        targ2ix,
                                        max_sent_len)
@@ -96,9 +101,12 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
     embed_weights = REData.load_pickle(embed_file)
 
     global_eval_history = defaultdict(list)
+
     monitor_score_history = global_eval_history['monitor_score']
 
     params_history = []
+
+    kbest_scores = []
 
     for eval_i in range(1, max_evals + 1):
 
@@ -113,64 +121,66 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
         model, optimizer = model_instance(len(word2ix), len(targ2ix),
                                           max_sent_len, embed_weights, **params)
 
-        global_best_score = ModuleOptim.get_best_score(global_eval_history['monitor_score'], monitor)
+        # global_best_score = ModuleOptim.get_best_score(global_eval_history['monitor_score'], monitor)
 
-        local_monitor_score, local_val_loss, local_val_acc, local_val_f1 = train_model(
-            model, optimizer, global_best_score,
-            train_dataset, val_datset, test_datset,
+        kbest_scores = train_model(
+            model, optimizer, kbest_scores,
+            train_dataset, val_dataset, test_dataset,
             targ2ix,
-            global_checkpoint_file,
+            checkpoint_base,
             **params
         )
 
-        monitor_score_history.append(local_monitor_score)
-        global_eval_history['val_loss'].append(local_val_loss)
-        global_eval_history['val_acc'].append(local_val_acc)
-        global_eval_history['val_f1'].append(local_val_f1)
+        # logger.info("[Monitoring %s]Local val loss: %.4f, val acc: %.4f, val f1: %.4f" % (
+        #     monitor,
+        #     global_eval_history['val_loss'][-1],
+        #     global_eval_history['val_acc'][-1],
+        #     global_eval_history['val_f1'][-1])
+        # )
+        #
+        # best_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history,
+        #                                                                     monitor))
+        # logger.info("[Monitoring %s]Global val loss: %.4f, val acc: %.4f, val f1: %.4f\n" % (
+        #     monitor,
+        #     global_eval_history['val_loss'][best_index],
+        #     global_eval_history['val_acc'][best_index],
+        #     global_eval_history['val_f1'][best_index])
+        # )
+        logger.info("Kbest scores: %s" % kbest_scores)
 
-        print(local_val_loss, local_val_acc, local_val_f1)
+    best_checkpoint_file = get_checkpoint_file(checkpoint_base, monitor, kbest_scores[-1])
 
-        logger.info("[Monitoring %s]Local val loss: %.4f, val acc: %.4f, val f1: %.4f" % (
-            monitor,
-            global_eval_history['val_loss'][-1],
-            global_eval_history['val_acc'][-1],
-            global_eval_history['val_f1'][-1])
-        )
-
-        best_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history,
-                                                                            monitor))
-        logger.info("[Monitoring %s]Global val loss: %.4f, val acc: %.4f, val f1: %.4f\n" % (
-            monitor,
-            global_eval_history['val_loss'][best_index],
-            global_eval_history['val_acc'][best_index],
-            global_eval_history['val_f1'][best_index])
-        )
-
-    global_best_checkpoint = torch.load(global_checkpoint_file,
+    best_checkpoint = torch.load(best_checkpoint_file,
                                         map_location=lambda storage,
                                         loc: storage)
 
     # logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
     logger.info("Final best %s: %.4f" % (monitor,
-                                         global_best_checkpoint['best_score']))
-    logger.info("Final best params: %s" % global_best_checkpoint['params'])
+                                         best_checkpoint['best_score']))
+    logger.info("Final best params: %s" % best_checkpoint['params'])
 
-    params = global_best_checkpoint['params']
+    params = best_checkpoint['params']
 
     model = getattr(REModule, params['classification_model'])(
                 len(word2ix), len(targ2ix),
                 max_sent_len, embed_weights, **params
             ).to(device=device)
 
-    test_datset = ModuleOptim.batch_to_device(test_datset, device)
+    test_data_loader = Data.DataLoader(
+        dataset=ModuleOptim.CustomizedDatasets(*test_dataset),
+        batch_size=64,
+        collate_fn=ModuleOptim.collate_fn,
+        shuffle=True,
+        num_workers=1,
+    )
 
-    model.load_state_dict(global_best_checkpoint['state_dict'])
-    REEval.batch_eval(model, test_datset, targ2ix, report_result=True)
+    model.load_state_dict(best_checkpoint['state_dict'])
+    REEval.batch_eval(model, test_data_loader, targ2ix, report_result=True)
 
 
-def train_model(model, optimizer, global_best_score,
+def train_model(model, optimizer, kbest_scores,
                 train_data, val_data, test_data,
-                targ2ix, global_checkpoint_file, **params):
+                targ2ix, checkpoint_base, **params):
 
     monitor = params['monitor']
 
@@ -243,22 +253,36 @@ def train_model(model, optimizer, global_best_score,
                 eval_history['val_acc'].append(val_acc)
                 eval_history['val_f1'].append(val_f1)
 
-                monitor_score = locals()[monitor]
+                monitor_score = round(locals()[monitor], 6)
 
-                global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
-                                                                              global_best_score,
-                                                                              monitor)
+                # global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
+                #                                                               global_best_score,
+                #                                                               monitor)
+
+                is_kbest, kbest_scores = ModuleOptim.update_kbest_scores(kbest_scores,
+                                                                         monitor_score,
+                                                                         monitor,
+                                                                         kbest=params['kbest_checkpoint'])
+
+                if is_kbest and len(kbest_scores) == params['kbest_checkpoint'] + 1:
+                    removed_score = kbest_scores.pop(0)
+                    ModuleOptim.delete_checkpoint(get_checkpoint_file(checkpoint_base,
+                                                                      monitor,
+                                                                      removed_score))
+                    assert len(kbest_scores) == params['kbest_checkpoint']
 
                 global_save_info = ModuleOptim.save_checkpoint({
                     'params': params,
                     'state_dict': model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'monitor': monitor,
-                    'best_score': global_best_score,
+                    'best_score': monitor_score,
                     'val_loss': val_loss,
                     'val_acc': val_acc,
                     'val_f1': val_f1,
-                }, global_is_best, global_checkpoint_file)
+                }, is_kbest, get_checkpoint_file(checkpoint_base,
+                                                 monitor,
+                                                 monitor_score))
 
                 _, _, [test_loss, test_acc, test_f1] = REEval.batch_eval(model, test_data_loader, targ2ix)
 
@@ -266,7 +290,7 @@ def train_model(model, optimizer, global_best_score,
                     'epoch: %2i, step: %4i, time: %4.1fs | '
                     'train loss: %.4f, train acc: %.4f | '
                     'val loss: %.4f, val acc: %.4f | '
-                    'test loss: %.4f, test acc: %.4f'
+                    'test loss: %.4f, test acc: %.4f %s'
                     % (
                         epoch,
                         step,
@@ -276,9 +300,11 @@ def train_model(model, optimizer, global_best_score,
                         val_loss,
                         val_acc,
                         test_loss,
-                        test_acc
+                        test_acc,
+                        global_save_info
                     )
                 )
+                print(kbest_scores)
 
         eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[-step_num * params['check_interval']:],
                                                                      monitor))
@@ -302,10 +328,7 @@ def train_model(model, optimizer, global_best_score,
 
     best_local_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history, params['monitor']))
 
-    return monitor_score_history[best_local_index], \
-           eval_history['val_loss'][best_local_index], \
-           eval_history['val_acc'][best_local_index], \
-           eval_history['val_f1'][best_local_index]
+    return kbest_scores
 
 
 def main():
@@ -318,7 +341,7 @@ def main():
     embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['entiAttnMatRNN'],
+        'classification_model': ['attnRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
         'rnn_hidden_dim': range(100, 1000 + 1, 20),
@@ -328,16 +351,17 @@ def main():
         'fc1_hidden_dim': range(100, 1000 + 1, 20),
         'fc1_dropout': [0.5],
         'batch_size': [32],
-        'epoch_num': [200],
+        'epoch_num': [1],
         'lr': [1e-0],
         'weight_decay':[1e-5],
         'max_norm': [1, 3, 5],
         'patience': [10],
         'monitor': ['val_f1'],
         'check_interval': [20],    # checkpoint based on val performance given a step interval
+        'kbest_checkpoint': [5]
     }
 
-    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=100)
+    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
 
 if __name__ == '__main__':
     main()

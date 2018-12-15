@@ -2,6 +2,7 @@
 import warnings
 warnings.simplefilter("ignore", UserWarning)
 import os
+from bisect import bisect
 
 import numpy as np
 import torch
@@ -22,11 +23,33 @@ def is_best_score(score, best_score, monitor):
     return is_best, best_score
 
 
-def get_best (monitor):
-    return max if monitor.endswith('loss') else min
+def update_kbest_scores(kbest_scores, new_score, monitor, kbest=5):
 
-def update_kbest_scores(kbest_scores, new_score, monitor):
-    pass
+    worst_func = max if monitor.endswith('loss') else min
+
+    if len(kbest_scores) < kbest:
+        new_index = bisect(kbest_scores, new_score)
+        kbest_scores.insert(new_index, new_score)
+        is_kbest = True
+        return is_kbest, kbest_scores
+    else:
+        assert len(kbest_scores) == kbest
+        if new_score > worst_func(kbest_scores):
+            new_index = bisect(kbest_scores, new_score)
+            kbest_scores.insert(new_index, new_score)
+            is_kbest = True
+            return is_kbest, kbest_scores    # len is kbest + 1, ready to pop the last for delete checkpoint
+        else:
+            is_kbest = False
+            return is_kbest, kbest_scores
+
+
+def delete_checkpoint(filename):
+    if os.path.isfile(filename):
+        os.remove(filename)
+    else:
+        raise Exception('[ERROR] Attempt to delete an unexisting checkpoint %s...' % filename)
+
 
 def get_best_score(scores, monitor):
     if not scores:
