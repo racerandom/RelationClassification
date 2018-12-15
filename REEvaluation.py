@@ -61,9 +61,9 @@ def extrinsic_evaluation(checkpoint_file, train_file, test_file, embed_file, pre
         max_sent_len, embed_weights, **params
     ).to(device=device)
 
-    test_datset = ModuleOptim.batch_to_device(test_datset, device)
-
     model.load_state_dict(checkpoint['state_dict'])
+
+    test_datset = ModuleOptim.batch_to_device(test_datset, device)
 
     eval_output(model, test_datset[:-1], test_datset[-1], targ2ix, pred_file, answer_file)
 

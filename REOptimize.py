@@ -27,7 +27,7 @@ logger = logging.getLogger('REOptimize')
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
 print('device:', device)
 
-seed = 13
+seed = 1337
 random.seed(seed)
 
 torch_seed = 1337
@@ -82,6 +82,55 @@ def model_instance(word_size, targ_size,
     return model, optimizer
 
 
+def batch_eval(model, data_loader, targ2ix, report_result=False):
+
+    model.eval()
+    with torch.no_grad():
+
+        pred, targ = torch.LongTensor(), torch.LongTensor()
+        loss_step, acc_step, f1_step = [], [], []
+
+        for batch in data_loader:
+            batch = ModuleOptim.batch_to_device(batch, device)
+            batch_feats = batch[:-1]
+            batch_targ = batch[-1]
+
+            batch_prob = model(*batch_feats)
+            batch_loss = F.nll_loss(batch_prob, batch_targ).item()
+            batch_pred = torch.argmax(batch_prob, dim=1)
+            batch_acc = (batch_pred == batch_targ).sum().item() / float(batch_pred.numel())
+            batch_f1 = REEvaluation.f1_score(batch_pred, batch_targ,
+                                             labels=[v for k, v in targ2ix.items() if k != 'Other'],
+                                             average='macro')
+
+            loss_step.append(batch_loss)
+            acc_step.append(batch_acc)
+            f1_step.append(batch_f1)
+
+            pred = torch.cat((pred, batch_pred), dim=0)
+            targ = torch.cat((targ, batch_targ), dim=0)
+
+        assert pred.shape[0] == targ.shape[0]
+
+        loss = mean(loss_step)
+        acc = mean(acc_step)
+        f1 = mean(f1_step)
+
+        if report_result:
+
+            idx_set = list(set([p.item() for p in pred]).union(set([t.item() for t in targ])))
+            logger.info('-' * 80)
+            logger.info(classification_report(pred,
+                                              targ,
+                                              target_names=[k for k, v in targ2ix.items() if v in idx_set]
+                                              )
+                        )
+            logger.info("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
+
+
+    return loss, acc, f1
+
+
 def optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=10):
 
     monitor = param_space['monitor'][0]
@@ -107,7 +156,6 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
 
     embed_weights = REData.load_pickle(embed_file)
 
-    # monitor_score_history, test_loss_history, test_acc_history, params_history = [], [], [], []
     global_eval_history = defaultdict(list)
     monitor_score_history = global_eval_history['monitor_score']
 
@@ -187,25 +235,29 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
     monitor = params['monitor']
 
-    # train_dataset = ModuleOptim.MultipleDatasets(*train_data)
-
-    train_dataset = ModuleOptim.CustomizedDatasets(*train_data)
-
     train_data_loader = Data.DataLoader(
-        dataset=train_dataset,
+        dataset=ModuleOptim.CustomizedDatasets(*train_data),
         batch_size=params['batch_size'],
         collate_fn=ModuleOptim.collate_fn,
         shuffle=True,
         num_workers=1,
     )
 
-    val_data = ModuleOptim.batch_to_device(val_data, device)
-    val_feats = val_data[:-1]
-    val_targ = val_data[-1]
+    val_data_loader = Data.DataLoader(
+        dataset=ModuleOptim.CustomizedDatasets(*val_data),
+        batch_size=params['batch_size'],
+        collate_fn=ModuleOptim.collate_fn,
+        shuffle=True,
+        num_workers=1,
+    )
 
-    test_data = ModuleOptim.batch_to_device(test_data, device)
-    test_feats = test_data[:-1]
-    test_targ = test_data[-1]
+    test_data_loader = Data.DataLoader(
+        dataset=ModuleOptim.CustomizedDatasets(*test_data),
+        batch_size=params['batch_size'],
+        collate_fn=ModuleOptim.collate_fn,
+        shuffle=True,
+        num_workers=1,
+    )
 
     eval_history = defaultdict(list)
 
@@ -227,7 +279,6 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
             start_time = time.time()
 
             train_batch = ModuleOptim.batch_to_device(train_batch, device)
-
             train_feats = train_batch[:-1]
             train_targ = train_batch[-1]
 
@@ -247,66 +298,48 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
             if (step != 0 and step % params['check_interval'] == 0) or step == step_num - 1:
 
-                model.eval()
-                with torch.no_grad():
-                    val_prob = model(*val_feats)
-                    val_loss = F.nll_loss(val_prob, val_targ).item()
-                    val_pred = torch.argmax(val_prob, dim=1)
-                    val_acc = (val_pred == val_targ).sum().item() / float(val_pred.numel())
-                    val_f1 = REEvaluation.f1_score(val_pred, val_targ,
-                                                   labels=[v for k, v in targ2ix.items() if k != 'Other'],
-                                                   average='macro')
+                val_loss, val_acc, val_f1 = batch_eval(model, val_data_loader, targ2ix, report_result=True)
 
-                    eval_history['val_loss'].append(val_loss)
-                    eval_history['val_acc'].append(val_acc)
-                    eval_history['val_f1'].append(val_f1)
+                eval_history['val_loss'].append(val_loss)
+                eval_history['val_acc'].append(val_acc)
+                eval_history['val_f1'].append(val_f1)
 
-                    monitor_score = locals()[monitor]
+                monitor_score = locals()[monitor]
 
-                    global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
-                                                                                  global_best_score,
-                                                                                  monitor)
+                global_is_best, global_best_score = ModuleOptim.is_best_score(monitor_score,
+                                                                              global_best_score,
+                                                                              monitor)
 
-                    global_save_info = ModuleOptim.save_checkpoint({
-                        'epoch': epoch,
-                        'params': params,
-                        'state_dict': model.state_dict(),
-                        'optimizer': optimizer.state_dict(),
-                        'monitor': monitor,
-                        'best_score': global_best_score,
-                        'val_loss': val_loss,
-                        'val_acc': val_acc,
-                        'val_f1': val_f1,
-                    }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
+                global_save_info = ModuleOptim.save_checkpoint({
+                    'params': params,
+                    'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'monitor': monitor,
+                    'best_score': global_best_score,
+                    'val_loss': val_loss,
+                    'val_acc': val_acc,
+                    'val_f1': val_f1,
+                }, global_is_best, "models/best_global_%s_checkpoint.pth" % params['classification_model'])
 
-                    test_prob = model(*test_feats)
-                    test_loss = F.nll_loss(test_prob, test_targ).item()
-                    test_pred = torch.argmax(test_prob, dim=1)
-                    test_acc = (test_pred == test_targ).sum().item() / float(test_pred.numel())
-                    test_f1 = REEvaluation.f1_score(test_pred, test_targ, labels=[v for k, v in targ2ix.items() if k != 'Other'],
-                                                    average='macro')
+                test_loss, test_acc, test_f1 = batch_eval(model, test_data_loader, targ2ix)
 
-                    eval_history['test_loss'].append(test_loss)
-                    eval_history['test_acc'].append(test_acc)
-                    eval_history['test_f1'].append(test_f1)
-
-                    logger.debug(
-                        'epoch: %2i, step: %4i, time: %4.1fs | '
-                        'train loss: %.4f, train acc: %.4f | '
-                        'val loss: %.4f, val acc: %.4f | '
-                        'test loss: %.4f, test acc: %.4f'
-                        % (
-                            epoch,
-                            step,
-                            time.time() - start_time,
-                            train_loss,
-                            train_acc,
-                            val_loss,
-                            val_acc,
-                            test_loss,
-                            test_acc
-                        )
+                logger.debug(
+                    'epoch: %2i, step: %4i, time: %4.1fs | '
+                    'train loss: %.4f, train acc: %.4f | '
+                    'val loss: %.4f, val acc: %.4f | '
+                    'test loss: %.4f, test acc: %.4f'
+                    % (
+                        epoch,
+                        step,
+                        time.time() - start_time,
+                        train_loss,
+                        train_acc,
+                        val_loss,
+                        val_acc,
+                        test_loss,
+                        test_acc
                     )
+                )
 
         eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[-step_num * params['check_interval']:],
                                                                      monitor))
