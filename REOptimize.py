@@ -9,20 +9,15 @@ import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
 
-from sklearn.metrics import classification_report
-from statistics import mean, median, variance, stdev
 
 import REUtils
 import REModule
 import ModuleOptim
 import REData
-import REEvaluation
+import REEval
 warnings.simplefilter("ignore", UserWarning)
 
-REUtils.setup_stream_logger('REOptimize', level=logging.DEBUG)
 logger = logging.getLogger('REOptimize')
-
-
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
 print('device:', device)
@@ -34,28 +29,6 @@ torch_seed = 1337
 torch.manual_seed(torch_seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
-
-
-def eval_data(model, feats, target, rel_idx):
-    model.eval()
-
-    with torch.no_grad():
-        out = model(*feats)
-        loss = F.nll_loss(out, target).item()
-
-        pred = torch.argmax(out, dim=1)
-        acc = (pred == target).sum().item() / float(pred.numel())
-
-        idx_set = list(set([p.item() for p in pred]).union(set([t.item() for t in target])))
-
-        logger.info('-' * 80)
-        logger.info(classification_report(pred,
-                                    target,
-                                    target_names=[key for key, value in rel_idx.items() if value in idx_set]
-                                    )
-              )
-        logger.info("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
-
 
 
 def model_instance(word_size, targ_size,
@@ -80,55 +53,6 @@ def model_instance(word_size, targ_size,
     logger.debug("Parameters: %i" % ModuleOptim.count_parameters(model))
 
     return model, optimizer
-
-
-def batch_eval(model, data_loader, targ2ix, report_result=False):
-
-    model.eval()
-    with torch.no_grad():
-
-        pred, targ = torch.LongTensor().to(device), torch.LongTensor().to(device)
-        loss_step, acc_step, f1_step = [], [], []
-
-        for batch in data_loader:
-            batch = ModuleOptim.batch_to_device(batch, device)
-            batch_feats = batch[:-1]
-            batch_targ = batch[-1]
-
-            batch_prob = model(*batch_feats)
-            batch_loss = F.nll_loss(batch_prob, batch_targ).item()
-            batch_pred = torch.argmax(batch_prob, dim=1)
-            batch_acc = (batch_pred == batch_targ).sum().item() / float(batch_pred.numel())
-            batch_f1 = REEvaluation.f1_score(batch_pred, batch_targ,
-                                             labels=[v for k, v in targ2ix.items() if k != 'Other'],
-                                             average='macro')
-
-            loss_step.append(batch_loss)
-            acc_step.append(batch_acc)
-            f1_step.append(batch_f1)
-
-            pred = torch.cat((pred, batch_pred), dim=0)
-            targ = torch.cat((targ, batch_targ), dim=0)
-
-        assert pred.shape[0] == targ.shape[0]
-
-        loss = mean(loss_step)
-        acc = mean(acc_step)
-        f1 = mean(f1_step)
-
-        if report_result:
-
-            idx_set = list(set([p.item() for p in pred]).union(set([t.item() for t in targ])))
-            logger.info('-' * 80)
-            logger.info(classification_report(pred,
-                                              targ,
-                                              target_names=[k for k, v in targ2ix.items() if v in idx_set]
-                                              )
-                        )
-            logger.info("test performance: loss %.4f, accuracy %.4f" % (loss, acc))
-
-
-    return loss, acc, f1
 
 
 def optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=10):
@@ -225,7 +149,7 @@ def optimize_model(train_file, val_file, test_file, embed_file, param_space, max
     test_datset = ModuleOptim.batch_to_device(test_datset, device)
 
     model.load_state_dict(global_best_checkpoint['state_dict'])
-    eval_data(model, test_datset[:-1], test_datset[-1], targ2ix)
+    REEval.batch_eval(model, test_datset, targ2ix, report_result=True)
 
 
 def train_model(model, optimizer, global_best_score, train_data, val_data, test_data, targ2ix, global_checkpoint_file, **params):
@@ -295,7 +219,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
 
             if (step != 0 and step % params['check_interval'] == 0) or step == step_num - 1:
 
-                val_loss, val_acc, val_f1 = batch_eval(model, val_data_loader, targ2ix)
+                _, _, [val_loss, val_acc, val_f1] = REEval.batch_eval(model, val_data_loader, targ2ix)
 
                 eval_history['val_loss'].append(val_loss)
                 eval_history['val_acc'].append(val_acc)
@@ -318,7 +242,7 @@ def train_model(model, optimizer, global_best_score, train_data, val_data, test_
                     'val_f1': val_f1,
                 }, global_is_best, global_checkpoint_file)
 
-                test_loss, test_acc, test_f1 = batch_eval(model, test_data_loader, targ2ix)
+                _, _, [test_loss, test_acc, test_f1] = REEval.batch_eval(model, test_data_loader, targ2ix)
 
                 logger.debug(
                     'epoch: %2i, step: %4i, time: %4.1fs | '

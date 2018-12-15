@@ -5,12 +5,15 @@ import numpy as np
 import gensim
 import time
 import pickle
+import logging
+
 import torch
 import torch.nn as nn
 
 # inner library
 from REObject import Relation
 
+logger = logging.getLogger('REOptimize')
 
 def data_reader(filename):
     with open(filename, 'r') as fi:

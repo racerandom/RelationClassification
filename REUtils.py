@@ -11,3 +11,6 @@ def setup_stream_logger(logger_name, level=logging.INFO):
     logger.addHandler(streamHandler)
 
     return logger
+
+setup_stream_logger('REOptimize', level=logging.DEBUG)
+logger = logging.getLogger('REOptimize')

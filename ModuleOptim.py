@@ -6,7 +6,6 @@ import os
 import numpy as np
 import torch
 import torch.utils.data as Data
-import REData
 
 
 def count_parameters(model):
