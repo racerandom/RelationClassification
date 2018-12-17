@@ -15,7 +15,6 @@ from allennlp.modules.elmo import Elmo, batch_to_ids
 import REData
 
 import logging
-logger = logging.getLogger('REOptimize')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -378,10 +377,10 @@ class attnRNN(baseNN):
 
         attn_bW = self.attn_W.repeat(batch_size, 1)
         attn_alpha = torch.bmm(rnn_out, attn_bW.unsqueeze(2))
-        attn_prob = F.softmax(attn_alpha.squeeze(), dim=1)
+        attn_prob = F.softmax(attn_alpha.squeeze(2), dim=1)
         attn_out = F.tanh(torch.bmm(attn_prob.unsqueeze(1), rnn_out))
 
-        attn_out = self.fc_drop(attn_out.squeeze())
+        attn_out = self.fc_drop(attn_out.squeeze(1))
 
         fc_out = F.log_softmax(self.fc(attn_out), dim=1)
 

@@ -3,6 +3,7 @@ import warnings
 warnings.simplefilter("ignore", UserWarning)
 import os
 from bisect import bisect
+from collections import defaultdict
 
 import numpy as np
 import torch
@@ -28,13 +29,17 @@ def update_kbest_scores(kbest_scores, new_score, monitor, kbest=5):
     worst_func = max if monitor.endswith('loss') else min
 
     if len(kbest_scores) < kbest:
-        new_index = bisect(kbest_scores, new_score)
-        kbest_scores.insert(new_index, new_score)
-        is_kbest = True
-        return is_kbest, kbest_scores
+        if new_score not in kbest_scores:
+            new_index = bisect(kbest_scores, new_score)
+            kbest_scores.insert(new_index, new_score)
+            is_kbest = True
+            return is_kbest, kbest_scores
+        else:
+            is_kbest = False
+            return is_kbest, kbest_scores
     else:
         assert len(kbest_scores) == kbest
-        if new_score > worst_func(kbest_scores):
+        if new_score > worst_func(kbest_scores) and new_score not in kbest_scores:
             new_index = bisect(kbest_scores, new_score)
             kbest_scores.insert(new_index, new_score)
             is_kbest = True
@@ -63,6 +68,7 @@ def get_best_score(scores, monitor):
             return max(scores)
         else:
             raise Exception('[ERROR] Unknown monitor mode...')
+
 
 def save_checkpoint(state, is_best, filename):
     """Save checkpoint if a new best is achieved"""
@@ -144,8 +150,3 @@ def collate_fn(batch_data):
             raise Exception("[ERROR] Unknown data type in 'collate_fn'...")
 
     return out_list
-
-
-
-
-

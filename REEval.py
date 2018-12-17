@@ -1,18 +1,21 @@
 # coding=utf-8
-import sys, os, logging
+import sys
+import os
+import logging
 
 import torch
 import torch.nn.functional as F
 import torch.utils.data as Data
 from sklearn.metrics import f1_score, classification_report
-from statistics import mean, median, variance, stdev
+# from statistics import mean, median, variance, stdev
 
-import REData, REModule, ModuleOptim
+import REData
+import REModule
+import ModuleOptim
 
 logger = logging.getLogger('REOptimize')
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
-print('device:', device)
 
 
 def batch_eval(model, data_loader, targ2ix, report_result=False):
@@ -83,14 +86,18 @@ def eval_output(model, test_datset, targ2ix, pred_file, answer_file):
 
 def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file):
 
-    word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
+    train_rels = REData.load_pickle(pickle_file=train_file)
 
-    test_data = REData.generate_data(test_file,
-                                       word2ix,
-                                       targ2ix,
-                                       max_sent_len)
+    test_rels = REData.load_pickle(pickle_file=test_file)
 
+    word2ix, targ2ix, max_sent_len = REData.prepare_feat2ix(train_rels + test_rels)
 
+    test_data = REData.prepare_tensors(
+        test_rels,
+        word2ix,
+        targ2ix,
+        max_sent_len
+    )
 
     embed_weights = REData.load_pickle(embed_file)
 
@@ -126,12 +133,16 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
 
 def call_official_eval(pred_file, answer_file):
     import subprocess
-    eval_out = subprocess.Popen(["data/SemEval2010_task8_all_data/SemEval2010_task8_scorer-v1.2/semeval2010_task8_scorer-v1.2.pl",
+    eval_out = subprocess.Popen(["data/SemEval2010_task8_all_data/SemEval2010_task8_scorer-v1.2/"
+                                 "semeval2010_task8_scorer-v1.2.pl",
                                  pred_file,
                                  answer_file], stdout=subprocess.PIPE)
     logger.info("\n%s" % eval_out.communicate()[0].decode("utf-8").strip().split('\n')[-1])
 
+
 def main():
+    print('device:', device)
+
     PI = 'PI.' if len(sys.argv) > 2 and sys.argv[2] in ['PI', 'pi'] else ''
     checkpoint_file = sys.argv[1]
     train_file = "data/train.%spkl" % PI
@@ -143,6 +154,7 @@ def main():
     extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file)
 
     call_official_eval(pred_file, answer_file)
+
 
 if __name__ == '__main__':
     main()

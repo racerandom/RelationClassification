@@ -6,14 +6,29 @@ import gensim
 import time
 import pickle
 import logging
+import copy
+from collections import defaultdict
 
 import torch
 import torch.nn as nn
+from sklearn.model_selection import StratifiedShuffleSplit
 
 # inner library
 from REObject import Relation
 
-logger = logging.getLogger('REOptimize')
+
+def label_distrib(labels, report=False):
+    l_distrib = defaultdict(lambda: 0)
+    for l in labels:
+        l_distrib[l] += 1
+
+    if report:
+        total_num = sum(list(l_distrib.values()))
+        for k, v in sorted(l_distrib.items()):
+            print("%s: %.3f" % (k, v/total_num))
+        print()
+    return l_distrib
+
 
 def data_reader(filename):
     with open(filename, 'r') as fi:
@@ -127,24 +142,24 @@ def load_pickle(pickle_file='data/temp.pkl'):
     return data
 
 
-## convert a token to an index number
+# convert a token to an index number
 def tok2ix(tok, to_ix, unk_ix):
     return to_ix[tok] if tok in to_ix else unk_ix
 
 
-## convert 1D token sequences to token_index sequences
+# convert 1D token sequences to token_index sequences
 def prepare_seq_1d(seq_1d, to_ix, unk_ix=0):
     ix_seq_1d = [tok2ix(tok, to_ix, unk_ix) for tok in seq_1d]
     return ix_seq_1d
 
 
-## convert 2D token sequences to token_index sequences
+# convert 2D token sequences to token_index sequences
 def prepare_seq_2d(seq_2d, to_ix, unk_ix=0):
     ix_seq_2d = [[tok2ix(tok, to_ix, unk_ix) for tok in seq_1d] for seq_1d in seq_2d]
     return ix_seq_2d
 
 
-## padding 2D index sequences to a fixed given length
+# padding 2D index sequences to a fixed given length
 def padding_2d(seq_2d, max_seq_len, padding=0, direct='right'):
 
     for seq_1d in seq_2d:
@@ -160,17 +175,14 @@ def max_len_2d(seq_2d):
     return max([len(seq) for seq in seq_2d])
 
 
-def save_all_data(train_pickle_file, val_pickle_file, test_pickle_file, PI=False):
+def save_all_data(train_pickle_file, test_pickle_file, PI=False):
 
     train_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_training/TRAIN_FILE.TXT"
     test_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_testing_keys/TEST_FILE_FULL.TXT"
 
     train_data = data_reader(train_file)
     prepare_feats(train_data, PI=PI)
-    train_rels = train_data[:7109]
-    val_rels = train_data[7109:]
-    pickle_data(train_rels, pickle_file=train_pickle_file)
-    pickle_data(val_rels, pickle_file=val_pickle_file)
+    pickle_data(train_data, pickle_file=train_pickle_file)
 
     test_data = data_reader(test_file)
     prepare_feats(test_data, PI=PI)
@@ -179,16 +191,15 @@ def save_all_data(train_pickle_file, val_pickle_file, test_pickle_file, PI=False
 
 def slim_word_embed(word2ix, embed_file, embed_pickle_file):
 
-    embed_weights = pre_embed_to_weight(word2ix, embed_file, binary=True)
+    embed_weights = pre_embed_to_weight(word2ix, embed_file)
     pickle_data(embed_weights, pickle_file=embed_pickle_file)
 
 
-def generate_feat2ix(train_file):
+def prepare_feat2ix(dataset):
 
-    train_data = load_pickle(pickle_file=train_file)
-    word_feat = [rel.feat_inputs['word_sent'] for rel in train_data]
+    word_feat = [rel.feat_inputs['word_sent'] for rel in dataset]
     max_sent_len = max_len_2d(word_feat)
-    rel_label = [rel.rel for rel in train_data]
+    rel_label = [rel.rel for rel in dataset]
 
     word2ix = feat_to_ix(word_feat)
     targ2ix = targ_to_ix(rel_label)
@@ -199,9 +210,34 @@ def generate_feat2ix(train_file):
     return word2ix, targ2ix, max_sent_len
 
 
-def generate_data(data_file, word2ix, targ2ix, max_sent_len):
+def stratified_split_val(train_rels, val_rate=0.1, n_splits=1, random_seed=0):
 
-    rel_data = load_pickle(pickle_file=data_file)
+    rel_distrib = label_distrib([rel.rel for rel in train_rels])
+
+    # print(rel_distrib)
+
+    for label, num in rel_distrib.items():
+        if num == 1:
+            new_data = None
+            for data in train_rels:
+                if data.rel == label:
+                    new_data = copy.deepcopy(data)
+            if new_data:
+                train_rels.append(new_data)
+    targs = [rel.rel for rel in train_rels]
+
+    print(len(train_rels))
+
+    stratifed_spliter = StratifiedShuffleSplit(n_splits=n_splits, test_size=val_rate, random_state=random_seed)
+    stratifed_spliter.get_n_splits(train_rels, targs)
+    n_indices = []
+    for train_index, test_index in stratifed_spliter.split(train_rels, targs):
+        n_indices.append((train_index, test_index))
+    return n_indices
+
+
+def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len):
+
     word_feat = [rel.feat_inputs['word_sent'] for rel in rel_data]
     word_list = prepare_seq_2d(word_feat, word2ix)
     word_t = torch.tensor(padding_2d(word_list, max_sent_len))
@@ -211,49 +247,48 @@ def generate_data(data_file, word2ix, targ2ix, max_sent_len):
 
     e1ix_l = [rel.e1_tids for rel in rel_data]
     e2ix_l = [rel.e2_tids for rel in rel_data]
-    # max_entity_len = max(max([len(e1ix) for e1ix in e1ix_Feat]), max([len(e2ix) for e2ix in e2ix_Feat]))
-    # e1ix_t = torch.tensor(padding_2d(e1ix_Feat, max_entity_len, padding=-1))
-    # e2ix_t = torch.tensor(padding_2d(e2ix_Feat, max_entity_len, padding=-1))
 
-    print("[Data] '%s' is generated with: word %s, targs %s\n" % (data_file,
-                                                                  word_t.shape,
-                                                                  targ_t.shape))
+    print("[Data] tensor feats are prepared : word %s, targs %s\n" % (word_t.shape,
+                                                                      targ_t.shape))
 
     return word_t, e1ix_l, e2ix_l, targ_t
 
 
 def main():
 
-    train_file = "data/train.pkl"
-    val_file = "data/val.pkl"
-    test_file = "data/test.pkl"
-    embed_file = "/Users/fei-c/Resources/embed/giga-aacw.d200.bin"
-    embed_pickle_file = "data/giga-aacw.d200.embed"
+    PI_feat = True
 
-    # save_all_data(train_file, val_file, test_file, PI=False)
+    train_file = "data/train%s.pkl" % ('.PI' if PI_feat else '')
+    test_file = "data/test%s.pkl" % ('.PI' if PI_feat else '')
+    embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
+    embed_pickle_file = "data/glove%s.100d.embed" % ('.PI' if PI_feat else '')
 
-    word2ix, targ2ix, max_sent_len = generate_feat2ix(train_file)
+    # save_all_data(train_file, test_file, PI=PI_feat)
+
+    train_data = load_pickle(pickle_file=train_file)
+    test_data = load_pickle(pickle_file=test_file)
+
+    word2ix, targ2ix, max_sent_len = prepare_feat2ix(train_data + test_data)
 
     print(targ2ix)
-    # slim_word_embed(word2ix, embed_file, embed_pickle_file)
+    slim_word_embed(word2ix, embed_file, embed_pickle_file)
 
-    train_word, train_e1ix, train_e2ix, train_targs = generate_data(train_file,
-                                                                    word2ix,
-                                                                    targ2ix,
-                                                                    max_sent_len)
-
-    val_word, val_e1ix, val_e2ix, val_targs = generate_data(val_file,
-                                                            word2ix,
-                                                            targ2ix,
-                                                            max_sent_len)
-
-    test_word, test_e1ix, test_e2ix, test_targs = generate_data(test_file,
-                                                                word2ix,
-                                                                targ2ix,
-                                                                max_sent_len)
-
-    print(word2ix['<e1>'], word2ix['</e1>'], word2ix['<e2>'], word2ix['</e2>'])
-
+    # train_word, train_e1ix, train_e2ix, train_targs = generate_data(train_file,
+    #                                                                 word2ix,
+    #                                                                 targ2ix,
+    #                                                                 max_sent_len)
+    #
+    # val_word, val_e1ix, val_e2ix, val_targs = generate_data(val_file,
+    #                                                         word2ix,
+    #                                                         targ2ix,
+    #                                                         max_sent_len)
+    #
+    # test_word, test_e1ix, test_e2ix, test_targs = generate_data(test_file,
+    #                                                             word2ix,
+    #                                                             targ2ix,
+    #                                                             max_sent_len)
+    #
+    # print(word2ix['<e1>'], word2ix['</e1>'], word2ix['<e2>'], word2ix['</e2>'])
 
 
 if __name__ == '__main__':

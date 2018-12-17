@@ -34,7 +34,7 @@ setup_stream_logger('REOptimize', level=logging.DEBUG)
 logger = logging.getLogger('REOptimize')
 
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
-print('device:', device)
+
 
 seed = 1
 random.seed(seed)
@@ -50,8 +50,9 @@ def get_checkpoint_file(checkpoint_base, monitor, score):
                              monitor,
                              score)
 
+
 def model_instance(word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                   max_sent_len, pre_embed, **params):
 
     model = getattr(REModule, params['classification_model'])(
         word_size, targ_size,
@@ -74,29 +75,46 @@ def model_instance(word_size, targ_size,
     return model, optimizer
 
 
-def optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=10):
+def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10):
+
+    print('device:', device)
 
     monitor = param_space['monitor'][0]
 
     checkpoint_base = "models/checkpoint_%s_%i" % (param_space['classification_model'][0],
-                                                          int(time.time()))
+                                                   int(time.time()))
 
-    word2ix, targ2ix, max_sent_len = REData.generate_feat2ix(train_file)
+    train_rels = REData.load_pickle(pickle_file=train_file)
 
-    train_dataset = REData.generate_data(train_file,
-                                         word2ix,
-                                         targ2ix,
-                                         max_sent_len)
+    train_indice, val_indice = REData.stratified_split_val(train_rels,
+                                                           val_rate=0.1,
+                                                           n_splits=1,
+                                                           random_seed=0)[0]
 
-    val_dataset = REData.generate_data(val_file,
-                                      word2ix,
-                                      targ2ix,
-                                      max_sent_len)
+    test_rels = REData.load_pickle(pickle_file=test_file)
 
-    test_dataset = REData.generate_data(test_file,
-                                       word2ix,
-                                       targ2ix,
-                                       max_sent_len)
+    word2ix, targ2ix, max_sent_len = REData.prepare_feat2ix(train_rels + test_rels)
+
+    train_dataset = REData.prepare_tensors(
+        [train_rels[index] for index in train_indice],
+        word2ix,
+        targ2ix,
+        max_sent_len
+    )
+
+    val_dataset = REData.prepare_tensors(
+        [train_rels[index] for index in val_indice],
+        word2ix,
+        targ2ix,
+        max_sent_len
+    )
+
+    test_dataset = REData.prepare_tensors(
+        test_rels,
+        word2ix,
+        targ2ix,
+        max_sent_len
+    )
 
     embed_weights = REData.load_pickle(embed_file)
 
@@ -306,8 +324,10 @@ def train_model(model, optimizer, kbest_scores,
                 )
                 print(kbest_scores)
 
-        eval_history['epoch_best'].append(ModuleOptim.get_best_score(monitor_score_history[-step_num * params['check_interval']:],
-                                                                     monitor))
+        eval_history['epoch_best'].append(
+            ModuleOptim.get_best_score(monitor_score_history[-step_num * params['check_interval']:],
+                                       monitor)
+        )
 
         logger.info(
             "epoch %i finished in %.2fs, "
@@ -321,8 +341,9 @@ def train_model(model, optimizer, kbest_scores,
         )
 
         if (patience and
-                len(eval_history['epoch_best']) >= patience and
-                eval_history['epoch_best'][-patience] == ModuleOptim.get_best_score(eval_history['epoch_best'][-patience:], monitor)):
+            len(eval_history['epoch_best']) >= patience and
+            eval_history['epoch_best'][-patience] == ModuleOptim.get_best_score(eval_history['epoch_best'][-patience:],
+                                                                                monitor)):
             print('[Early Stopping] patience reached, stopping...')
             break
 
@@ -333,15 +354,14 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    pi_feat = ''
+    pi_feat = '.PI'
 
     train_file = "data/train%s.pkl" % pi_feat
-    val_file = "data/val%s.pkl" % pi_feat
     test_file = "data/test%s.pkl" % pi_feat
     embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['attnRNN'],
+        'classification_model': ['baseRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
         'rnn_hidden_dim': range(100, 1000 + 1, 20),
@@ -353,7 +373,7 @@ def main():
         'batch_size': [32],
         'epoch_num': [1],
         'lr': [1e-0],
-        'weight_decay':[1e-5],
+        'weight_decay': [1e-5],
         'max_norm': [1, 3, 5],
         'patience': [10],
         'monitor': ['val_f1'],
@@ -361,7 +381,8 @@ def main():
         'kbest_checkpoint': [5]
     }
 
-    optimize_model(train_file, val_file, test_file, embed_file, param_space, max_evals=1)
+    optimize_model(train_file, test_file, embed_file, param_space, max_evals=1)
+
 
 if __name__ == '__main__':
     main()
