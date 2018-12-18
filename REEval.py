@@ -1,4 +1,5 @@
 # coding=utf-8
+
 import sys
 import os
 import logging
@@ -18,7 +19,7 @@ logger = logging.getLogger('REOptimize')
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
 
 
-def batch_eval(model, data_loader, targ2ix, report_result=False):
+def batch_eval(model, data_loader, targ2ix, loss_func, report_result=False):
 
     model.eval()
     with torch.no_grad():
@@ -37,13 +38,14 @@ def batch_eval(model, data_loader, targ2ix, report_result=False):
 
         assert pred_prob.shape[0] == targ.shape[0]
 
-        loss = F.nll_loss(pred_prob, targ).item()
+        loss = loss_func(pred_prob, targ).item()
         pred = torch.argmax(pred_prob, dim=1)
         acc = (pred == targ).sum().item() / float(pred.numel())
         f1 = f1_score(
             pred, targ,
             labels=[v for k, v in targ2ix.items() if k != 'Other'],
-            average='macro')
+            average='macro'
+        )
 
         if report_result:
 

@@ -1,6 +1,6 @@
 # coding=utf-8
+
 import warnings
-warnings.simplefilter("ignore", UserWarning)
 
 import logging
 import time
@@ -15,6 +15,8 @@ import REModule
 import ModuleOptim
 import REData
 import REEval
+
+warnings.simplefilter("ignore", UserWarning)
 
 
 def setup_stream_logger(logger_name, level=logging.INFO):
@@ -86,14 +88,15 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
 
     train_rels = REData.load_pickle(pickle_file=train_file)
 
+    test_rels = REData.load_pickle(pickle_file=test_file)
+
+    word2ix, targ2ix, max_sent_len = REData.prepare_feat2ix(train_rels + test_rels)
+
     train_indice, val_indice = REData.stratified_split_val(train_rels,
                                                            val_rate=0.1,
                                                            n_splits=1,
                                                            random_seed=0)[0]
 
-    test_rels = REData.load_pickle(pickle_file=test_file)
-
-    word2ix, targ2ix, max_sent_len = REData.prepare_feat2ix(train_rels + test_rels)
 
     train_dataset = REData.prepare_tensors(
         [train_rels[index] for index in train_indice],
@@ -149,21 +152,6 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
             **params
         )
 
-        # logger.info("[Monitoring %s]Local val loss: %.4f, val acc: %.4f, val f1: %.4f" % (
-        #     monitor,
-        #     global_eval_history['val_loss'][-1],
-        #     global_eval_history['val_acc'][-1],
-        #     global_eval_history['val_f1'][-1])
-        # )
-        #
-        # best_index = monitor_score_history.index(ModuleOptim.get_best_score(monitor_score_history,
-        #                                                                     monitor))
-        # logger.info("[Monitoring %s]Global val loss: %.4f, val acc: %.4f, val f1: %.4f\n" % (
-        #     monitor,
-        #     global_eval_history['val_loss'][best_index],
-        #     global_eval_history['val_acc'][best_index],
-        #     global_eval_history['val_f1'][best_index])
-        # )
         logger.info("Kbest scores: %s" % kbest_scores)
 
     best_checkpoint_file = get_checkpoint_file(checkpoint_base, monitor, kbest_scores[-1])
@@ -193,7 +181,14 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
     )
 
     model.load_state_dict(best_checkpoint['state_dict'])
-    REEval.batch_eval(model, test_data_loader, targ2ix, report_result=True)
+
+    loss_func = REModule.ranking_loss if param_space['ranking_loss'][0] else F.nll_loss
+
+    REEval.batch_eval(model,
+                      test_data_loader,
+                      targ2ix,
+                      loss_func,
+                      report_result=True)
 
 
 def train_model(model, optimizer, kbest_scores,
@@ -201,6 +196,8 @@ def train_model(model, optimizer, kbest_scores,
                 targ2ix, checkpoint_base, **params):
 
     monitor = params['monitor']
+
+    loss_func = REModule.ranking_loss if params['ranking_loss'] else F.nll_loss
 
     train_data_loader = Data.DataLoader(
         dataset=ModuleOptim.CustomizedDatasets(*train_data),
@@ -253,7 +250,8 @@ def train_model(model, optimizer, kbest_scores,
             model.zero_grad()
 
             pred_prob = model(*train_feats)
-            train_loss = F.nll_loss(pred_prob, train_targ)
+            train_loss = loss_func(pred_prob, train_targ)
+
             train_loss.backward(retain_graph=True)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=params['max_norm'])
             optimizer.step()
@@ -265,7 +263,10 @@ def train_model(model, optimizer, kbest_scores,
 
             if (step != 0 and step % params['check_interval'] == 0) or step == step_num - 1:
 
-                _, _, [val_loss, val_acc, val_f1] = REEval.batch_eval(model, val_data_loader, targ2ix)
+                _, _, [val_loss, val_acc, val_f1] = REEval.batch_eval(model,
+                                                                      val_data_loader,
+                                                                      targ2ix,
+                                                                      loss_func)
 
                 eval_history['val_loss'].append(val_loss)
                 eval_history['val_acc'].append(val_acc)
@@ -302,7 +303,10 @@ def train_model(model, optimizer, kbest_scores,
                                                  monitor,
                                                  monitor_score))
 
-                _, _, [test_loss, test_acc, test_f1] = REEval.batch_eval(model, test_data_loader, targ2ix)
+                _, _, [test_loss, test_acc, test_f1] = REEval.batch_eval(model,
+                                                                         test_data_loader,
+                                                                         targ2ix,
+                                                                         loss_func)
 
                 logger.debug(
                     'epoch: %2i, step: %4i, time: %4.1fs | '
@@ -322,7 +326,6 @@ def train_model(model, optimizer, kbest_scores,
                         global_save_info
                     )
                 )
-                print(kbest_scores)
 
         eval_history['epoch_best'].append(
             ModuleOptim.get_best_score(monitor_score_history[-step_num * params['check_interval']:],
@@ -354,14 +357,14 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    pi_feat = '.PI'
+    pi_feat = ''
 
     train_file = "data/train%s.pkl" % pi_feat
     test_file = "data/test%s.pkl" % pi_feat
     embed_file = "data/glove%s.100d.embed" % pi_feat
 
     param_space = {
-        'classification_model': ['baseRNN'],
+        'classification_model': ['entiAttnMatRNN'],
         'freeze_mode': [False],
         'input_dropout': [0.3],
         'rnn_hidden_dim': range(100, 1000 + 1, 20),
@@ -378,7 +381,11 @@ def main():
         'patience': [10],
         'monitor': ['val_f1'],
         'check_interval': [20],    # checkpoint based on val performance given a step interval
-        'kbest_checkpoint': [5]
+        'kbest_checkpoint': [5],
+        'ranking_loss': [True],
+        # 'gamma': [2],
+        # 'margin_pos': [2.5],
+        # 'margin_neg': [0.5],
     }
 
     optimize_model(train_file, test_file, embed_file, param_space, max_evals=1)
