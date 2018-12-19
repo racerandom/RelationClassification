@@ -226,8 +226,6 @@ def stratified_split_val(train_rels, val_rate=0.1, n_splits=1, random_seed=0):
                 train_rels.append(new_data)
     targs = [rel.rel for rel in train_rels]
 
-    print(len(train_rels))
-
     stratifed_spliter = StratifiedShuffleSplit(n_splits=n_splits, test_size=val_rate, random_state=random_seed)
     stratifed_spliter.get_n_splits(train_rels, targs)
     n_indices = []

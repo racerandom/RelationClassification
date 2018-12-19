@@ -1,7 +1,7 @@
 # coding=utf-8
 
 import warnings
-
+import sys
 import logging
 import time
 import random
@@ -61,9 +61,15 @@ def model_instance(word_size, targ_size,
         max_sent_len, pre_embed, **params
     ).to(device=device)
 
-    optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()),
-                                     lr=params['lr'],
-                                     weight_decay=params['weight_decay'])
+    # optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()),
+    #                                  lr=params['lr'],
+    #                                  weight_decay=params['weight_decay'])
+
+    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
+                                lr=params['lr'],
+                                momentum=0.9,
+                                weight_decay=params['weight_decay'],
+                                nesterov=True)
 
     logger.debug(model)
     for name, param in model.named_parameters():
@@ -357,27 +363,23 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    pi_feat = ''
-
-    train_file = "data/train%s.pkl" % pi_feat
-    test_file = "data/test%s.pkl" % pi_feat
-    embed_file = "data/glove%s.100d.embed" % pi_feat
+    classification_model = 'attnInBaseRNN'
 
     param_space = {
-        'classification_model': ['entiAttnMatRNN'],
+        'classification_model': [classification_model],
         'freeze_mode': [False],
         'input_dropout': [0.3],
-        'rnn_hidden_dim': range(100, 1000 + 1, 20),
+        'rnn_hidden_dim': [400],
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
         'attn_dropout': [0.3],
-        'fc1_hidden_dim': range(100, 1000 + 1, 20),
+        'fc1_hidden_dim': [200],
         'fc1_dropout': [0.5],
         'batch_size': [32],
-        'epoch_num': [1],
-        'lr': [1e-0],
-        'weight_decay': [1e-5],
-        'max_norm': [1, 3, 5],
+        'epoch_num': [3],
+        'lr': [3e-2],
+        'weight_decay': [1e-3],
+        'max_norm': [5],
         'patience': [10],
         'monitor': ['val_f1'],
         'check_interval': [20],    # checkpoint based on val performance given a step interval
@@ -387,6 +389,15 @@ def main():
         # 'margin_pos': [2.5],
         # 'margin_neg': [0.5],
     }
+
+    pi_feat = '.PI' if classification_model in ['baseRNN',
+                                                'attnRNN',
+                                                'attnDotRNN',
+                                                'attnMatRNN'] else ''
+
+    train_file = "data/train%s.pkl" % pi_feat
+    test_file = "data/test%s.pkl" % pi_feat
+    embed_file = "data/glove%s.100d.embed" % pi_feat
 
     optimize_model(train_file, test_file, embed_file, param_space, max_evals=1)
 

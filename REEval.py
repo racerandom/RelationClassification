@@ -65,7 +65,10 @@ def eval_output(model, test_datset, targ2ix, pred_file, answer_file):
 
     ix2targ = {v: k for k, v in targ2ix.items()}
 
-    pred, targ, [loss, acc, f1] = batch_eval(model, test_datset, targ2ix)
+    pred, targ, [loss, acc, f1] = batch_eval(model,
+                                             test_datset,
+                                             targ2ix,
+                                             REModule.ranking_loss)
 
     logger.info('checkpoint performance: loss %.4f, acc %.4f, macro-F1 %.4f\n' % (loss, acc, f1))
 
