@@ -122,10 +122,14 @@ def feat_to_ix(feats, feat2ix=None):
     return feat2ix
 
 
-def targ_to_ix(targs):
+def targ_to_ix(targs, last_class='Other'):
+    targ_set = sorted(set(targs))
     targ2ix = {}
-    for targ in targs:
+    for targ in targ_set:
+        if targ == last_class:
+            continue
         targ2ix.setdefault(targ, len(targ2ix))
+    targ2ix.setdefault(last_class, len(targ2ix))
     return targ2ix
 
 
@@ -204,6 +208,8 @@ def prepare_feat2ix(dataset):
     word2ix = feat_to_ix(word_feat)
     targ2ix = targ_to_ix(rel_label)
 
+    print(targ2ix)
+
     print("[data2ix] word vocab %i, targ size %i, max sent len %i\n" % (len(word2ix),
                                                len(targ2ix),
                                                max_sent_len))
@@ -254,12 +260,12 @@ def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len):
 
 def main():
 
-    PI_feat = True
+    PI_feat = False
 
     train_file = "data/train%s.pkl" % ('.PI' if PI_feat else '')
     test_file = "data/test%s.pkl" % ('.PI' if PI_feat else '')
-    embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
-    embed_pickle_file = "data/glove%s.100d.embed" % ('.PI' if PI_feat else '')
+    embed_file = "/Users/fei-c/Resources/embed/GoogleNews-vectors-negative300.bin"
+    embed_pickle_file = "data/GoogleNews%s.d300.embed" % ('.PI' if PI_feat else '')
 
     # save_all_data(train_file, test_file, PI=PI_feat)
 

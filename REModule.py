@@ -14,6 +14,11 @@ import logging
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def normalize_batch_vector(batch_vector, p=2):
+    norm = batch_vector.norm(p=p, dim=1, keepdim=True)
+    return batch_vector.div(norm)
+
+
 def batch_entity_hidden(hidden_states, entity_index, cat_entity='sum'):
     e_h = [h[i] for h, i in zip(hidden_states, entity_index)]
     e_h_c = [catOverTime(h, cat_entity, dim=0) for h in e_h]
@@ -137,12 +142,14 @@ class matAttn(nn.Module):
 
 class ranking_layer(nn.Module):
 
-    def __init__(self, model_out_dim, targ_size):
+    def __init__(self, model_out_dim, targ_size, omit_other=True):
         super(ranking_layer, self).__init__()
         self.targ_size = targ_size
         self.targ_dim = model_out_dim
         r = torch.sqrt(torch.tensor(6 / (targ_size + model_out_dim)))
-        self.targ_weight = torch.nn.Parameter(torch.empty(model_out_dim, targ_size).uniform_(-r, r))
+        self.targ_weight = torch.nn.Parameter(torch.empty(model_out_dim,
+                                                          targ_size - 1 if omit_other else targ_size
+                                                          ).uniform_(-r, r))
 
     def forward(self, batch_model_out):
 
@@ -150,48 +157,84 @@ class ranking_layer(nn.Module):
 
         batch_size = batch_model_out.shape[0]
 
-        batch_targ_weights = self.targ_weight.repeat(batch_size, 1, 1)  # batch_size * out_dim * targ_size
+        # batch_targ_weights = self.targ_weight.repeat(batch_size, 1, 1)  # batch_size * out_dim * targ_size
+        #
+        # batch_pred_scores = torch.bmm(batch_model_out.unsqueeze(1), batch_targ_weights).squeeze(1)  # batch * targ_size
 
-        batch_pred_scores = torch.bmm(batch_model_out.unsqueeze(1), batch_targ_weights).squeeze(1)  # batch * targ_size
+        batch_pred_scores = torch.einsum('bd,dt->bt', (batch_model_out, self.targ_weight))
 
         return batch_pred_scores
 
 
-def get_neg_scores(batch_out, batch_gold, batch_size, targ_size):
+def get_neg_scores(batch_pred_scores, batch_gold, batch_size, targ_size, omit_other=True):
     # batch_out: batch_size * out_dim, batch_gold: batch * 1
-    mask = torch.ones_like(batch_out, dtype=torch.uint8)  # batch_size * out_dim
+    # mask = torch.ones_like(batch_pred_scores, dtype=torch.uint8)  # batch_size * out_dim
+    #
+    # for i in range(batch_gold.shape[0]):
+    #     if omit_other and batch_gold[i] == targ_size:
+    #         continue
+    #     mask[i][batch_gold[i]] = 0
+    #
+    # batch_neg_out = batch_pred_scores.masked_select(mask)
+    #
+    # assert batch_neg_out.shape[0] == batch_size * (targ_size - 1)
+    #
+    # batch_neg_scores = batch_neg_out.view(batch_size, targ_size - 1).max(dim=1)[0]
+    #
+    # return batch_neg_scores
 
-    for i in range(batch_gold.shape[0]):
-        mask[i][batch_gold[i]] = 0
+    batch_neg_score = []
+    for i in range(len(batch_pred_scores)):
 
-    batch_neg_out = batch_out.masked_select(mask)
+        mask = torch.ones_like(batch_pred_scores[i], dtype=torch.uint8)
+        if not omit_other:
+            mask[batch_gold[i]] = 0
+        elif batch_gold[i] < targ_size:
+            mask[batch_gold[i]] = 0
+        neg_scores = batch_pred_scores[i].masked_select(mask)
 
-    assert batch_neg_out.shape[0] == batch_size * (targ_size - 1)
-
-    batch_neg_scores = batch_neg_out.view(batch_size, targ_size - 1).max(dim=1)[0]
-
-    return batch_neg_scores
+        neg_score = neg_scores.max(dim=0)[0]
+        batch_neg_score.append(neg_score)
+    return torch.stack(batch_neg_score)
 
 
-def ranking_loss(batch_pred_scores, batch_gold, gamma=2, margin_pos=2.5, margin_neg=0.5):
+def ranking_loss(batch_pred_scores, batch_gold, gamma=2, margin_pos=2.5, margin_neg=0.5, omit_other=True):
 
     batch_size, targ_size = batch_pred_scores.shape
 
-    batch_pos_scores = batch_pred_scores.gather(1, batch_gold.unsqueeze(1)).squeeze(1)  # batch * 1
+    if omit_other:
+        batch_pos_score = torch.stack([torch.tensor(2.5) if index == 18 else scores[index] \
+                                        for scores, index in zip(batch_pred_scores, batch_gold)])
+    else:
+        batch_pos_score = batch_pred_scores.gather(1, batch_gold.unsqueeze(1)).squeeze(1)  # batch * 1
 
-    batch_neg_scores = get_neg_scores(batch_pred_scores, batch_gold, batch_size, targ_size)  # batch * 1
+    batch_neg_score = get_neg_scores(batch_pred_scores, batch_gold, batch_size, targ_size, omit_other=omit_other)  # batch * 1
 
-    loss = torch.log(1 + torch.exp(gamma * (margin_pos - batch_pos_scores))) + \
-           torch.log(1 + torch.exp(gamma * (margin_neg + batch_neg_scores)))
+    loss = torch.log(1 + torch.exp(gamma * (margin_pos - batch_pos_score))) + \
+           torch.log(1 + torch.exp(gamma * (margin_neg + batch_neg_score)))
 
     return loss.mean(dim=0)
 
 
+def infer_pred(batch_pred_scores, omit_other=True):
+    if omit_other:
+        batch_pred = []
+        for scores in batch_pred_scores:
+            if scores.max() < 0:
+                batch_pred.append(torch.tensor(18))
+            else:
+                batch_pred.append(torch.argmax(scores))
+        return torch.stack(batch_pred)
+    else:
+        return torch.argmax(batch_pred_scores, dim=1)
+
+
 class softmax_layer(nn.Module):
 
-    def __init__(self, model_out_dim, targ_size):
+    def __init__(self, model_out_dim, targ_size, omit_other=True):
         super(softmax_layer, self).__init__()
-        self.fc = nn.Linear(model_out_dim, targ_size)
+        self.fc = nn.Linear(model_out_dim,
+                            targ_size - 1 if omit_other else targ_size)
 
     def forward(self, model_out):
         fc_out = self.fc(model_out)
@@ -293,9 +336,12 @@ class attnRNN(baseNN):
 
         rnn_out = self.rnn_dropout(rnn_out)
 
-        attn_bW = self.attn_W.repeat(batch_size, 1)
-        attn_alpha = torch.bmm(rnn_out, attn_bW.unsqueeze(2))
-        attn_prob = F.softmax(attn_alpha.squeeze(2), dim=1)
+        # attn_bW = self.attn_W.repeat(batch_size, 1)
+        # attn_alpha = torch.bmm(rnn_out, attn_bW.unsqueeze(2)).squeeze(2)
+
+        attn_alpha = torch.einsum('bsd,d->bs', (rnn_out, self.attn_W))
+
+        attn_prob = F.softmax(attn_alpha, dim=1)
         attn_out = F.tanh(torch.bmm(attn_prob.unsqueeze(1), rnn_out))
 
         attn_out = self.fc_dropout(attn_out.squeeze(1))
@@ -425,7 +471,7 @@ class attnMatRNN(baseNN):
                            batch_first=True,
                            bidirectional=True)
 
-        self.attn_M = torch.nn.Parameter(torch.randn(self.rnn_hidden_dim, self.rnn_hidden_dim, requires_grad=True))
+        self.attn_M = torch.nn.Parameter(torch.empty(self.rnn_hidden_dim, self.rnn_hidden_dim).uniform_())
 
         self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
 
@@ -455,8 +501,13 @@ class attnMatRNN(baseNN):
         rnn_out = self.rnn_dropout(rnn_out)
 
         rnn_last = torch.cat((rnn_hidden[0][0, :, :], rnn_hidden[0][1, :, :]), dim=1)
-        attn_bM = self.attn_M.repeat(batch_size, 1, 1)
-        attn_prob = F.softmax(torch.bmm(torch.bmm(rnn_out, attn_bM), rnn_last.unsqueeze(2)).squeeze(2), dim=1)
+
+        # attn_bM = self.attn_M.repeat(batch_size, 1, 1)
+        # attn_alpha = torch.bmm(torch.bmm(rnn_out, attn_bM), rnn_last.unsqueeze(2)).squeeze(2)
+
+        attn_alpha = torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_M, rnn_last))
+
+        attn_prob = F.softmax(attn_alpha, dim=1)
         attn_out = torch.bmm(attn_prob.unsqueeze(1), rnn_out).squeeze(1)
 
         attn_out = self.fc_dropout(attn_out)
@@ -578,18 +629,24 @@ class entiAttnMatRNN(baseNN):
 
         rnn_out = self.rnn_dropout(rnn_out)
 
-        attn_bM = self.attn_M.repeat(batch_size, 1, 1)
-
         e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[1])
         e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[2])
 
+        attn_bM = self.attn_M.repeat(batch_size, 1, 1)
+
         rnn_out_mat = torch.bmm(rnn_out, attn_bM)
 
-        e1_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e1_hidden.unsqueeze(2)).squeeze(2), dim=1)
-        e1_mat_out = torch.bmm(e1_mat_prob.unsqueeze(1), rnn_out).squeeze(1)
+        # e1_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e1_hidden.unsqueeze(2)).squeeze(2), dim=1)
+        # e1_mat_out = torch.bmm(e1_mat_prob.unsqueeze(1), rnn_out).squeeze(1)
+        #
+        # e2_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e2_hidden.unsqueeze(2)).squeeze(2), dim=1)
+        # e2_mat_out = torch.bmm(e2_mat_prob.unsqueeze(1), rnn_out).squeeze(1)
 
-        e2_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e2_hidden.unsqueeze(2)).squeeze(2), dim=1)
-        e2_mat_out = torch.bmm(e2_mat_prob.unsqueeze(1), rnn_out).squeeze(1)
+        e1_alpha = F.softmax(torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_M, e1_hidden)))
+        e1_mat_out = torch.einsum('bs,bsd->bd', (e1_alpha, rnn_out))
+
+        e2_alpha = F.softmax(torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_M, e2_hidden)))
+        e2_mat_out = torch.einsum('bs,bsd->bd', (e2_alpha, rnn_out))
 
         attn_out = self.attn_dropout(torch.cat((e1_mat_out, e2_mat_out), dim=1))
 

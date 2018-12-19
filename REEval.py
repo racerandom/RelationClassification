@@ -39,7 +39,7 @@ def batch_eval(model, data_loader, targ2ix, loss_func, report_result=False):
         assert pred_prob.shape[0] == targ.shape[0]
 
         loss = loss_func(pred_prob, targ).item()
-        pred = torch.argmax(pred_prob, dim=1)
+        pred = REModule.infer_pred(pred_prob, omit_other=True)
         acc = (pred == targ).sum().item() / float(pred.numel())
         f1 = f1_score(
             pred, targ,

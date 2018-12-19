@@ -203,7 +203,7 @@ def train_model(model, optimizer, kbest_scores,
 
     monitor = params['monitor']
 
-    loss_func = REModule.ranking_loss if params['ranking_loss'] else F.nll_loss
+    loss_func = REModule.ranking_loss
 
     train_data_loader = Data.DataLoader(
         dataset=ModuleOptim.CustomizedDatasets(*train_data),
@@ -263,7 +263,7 @@ def train_model(model, optimizer, kbest_scores,
             optimizer.step()
 
             epoch_losses.append(train_loss.item())
-            train_pred = torch.argmax(pred_prob, dim=1)
+            train_pred = REModule.infer_pred(pred_prob, omit_other=True)
             train_acc = (train_pred == train_targ).sum().item() / float(train_pred.numel())
             epoch_acces.append(train_acc)
 
@@ -363,13 +363,13 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    classification_model = 'attnInBaseRNN'
+    classification_model = 'baseRNN'
 
     param_space = {
         'classification_model': [classification_model],
         'freeze_mode': [False],
         'input_dropout': [0.3],
-        'rnn_hidden_dim': [400],
+        'rnn_hidden_dim': [200],
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
         'attn_dropout': [0.3],
