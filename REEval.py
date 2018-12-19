@@ -70,7 +70,7 @@ def eval_output(model, test_datset, targ2ix, pred_file, answer_file):
                                              targ2ix,
                                              REModule.ranking_loss)
 
-    logger.info('checkpoint performance: loss %.4f, acc %.4f, macro-F1 %.4f\n' % (loss, acc, f1))
+    print('checkpoint performance: loss %.4f, acc %.4f, macro-F1 %.4f\n' % (loss, acc, f1))
 
     sent_ids = list(range(8001, 10718))
 
@@ -120,7 +120,7 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
         num_workers=1,
     )
 
-    logger.info("[checkpoint] loss %.4f, acc %.4f, f1 %.4f" % (checkpoint['val_loss'],
+    print("[checkpoint] loss %.4f, acc %.4f, f1 %.4f" % (checkpoint['val_loss'],
                                                                checkpoint['val_acc'],
                                                                checkpoint['val_f1']))
 
@@ -142,17 +142,24 @@ def call_official_eval(pred_file, answer_file):
                                  "semeval2010_task8_scorer-v1.2.pl",
                                  pred_file,
                                  answer_file], stdout=subprocess.PIPE)
-    logger.info("\n%s" % eval_out.communicate()[0].decode("utf-8").strip().split('\n')[-1])
+    print("\n%s" % eval_out.communicate()[0].decode("utf-8").strip().split('\n')[-1])
 
 
 def main():
     print('device:', device)
 
-    PI = 'PI.' if len(sys.argv) > 2 and sys.argv[2] in ['PI', 'pi'] else ''
     checkpoint_file = sys.argv[1]
-    train_file = "data/train.%spkl" % PI
-    test_file = "data/test.%spkl" % PI
-    embed_file = "data/glove.%s100d.embed" % PI
+
+    pi_feat = '.PI' if checkpoint_file.split('_')[1] in [
+        'baseRNN',
+        'attnRNN',
+        'attnDotRNN',
+        'attnMatRNN'
+    ] else ''
+
+    train_file = "data/train%s.pkl" % pi_feat
+    test_file = "data/test%s.pkl" % pi_feat
+    embed_file = "data/glove%s.100d.embed" % pi_feat
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 
