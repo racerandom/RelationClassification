@@ -26,7 +26,17 @@ def is_best_score(score, best_score, monitor):
 
 def update_kbest_scores(kbest_scores, new_score, monitor, kbest=5):
 
-    worst_func = max if monitor.endswith('loss') else min
+    def is_kbest(score, kbest):
+        if monitor.endswith('loss'):
+            if score < max(kbest):
+                return True
+            else:
+                return False
+        else:
+            if score > min(kbest):
+                return True
+            else:
+                return False
 
     if len(kbest_scores) < kbest:
         if new_score not in kbest_scores:
@@ -39,7 +49,7 @@ def update_kbest_scores(kbest_scores, new_score, monitor, kbest=5):
             return is_kbest, kbest_scores
     else:
         assert len(kbest_scores) == kbest
-        if new_score > worst_func(kbest_scores) and new_score not in kbest_scores:
+        if is_kbest(new_score, kbest_scores) and new_score not in kbest_scores:
             new_index = bisect(kbest_scores, new_score)
             kbest_scores.insert(new_index, new_score)
             is_kbest = True

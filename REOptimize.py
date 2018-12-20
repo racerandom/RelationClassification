@@ -61,15 +61,15 @@ def model_instance(word_size, targ_size,
         max_sent_len, pre_embed, **params
     ).to(device=device)
 
-    # optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()),
-    #                                  lr=params['lr'],
-    #                                  weight_decay=params['weight_decay'])
+    optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()),
+                                     lr=params['lr'],
+                                     weight_decay=params['weight_decay'])
 
-    optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
-                                lr=params['lr'],
-                                momentum=0.9,
-                                weight_decay=params['weight_decay'],
-                                nesterov=True)
+    # optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
+    #                             lr=params['lr'],
+    #                             momentum=0.9,
+    #                             weight_decay=params['weight_decay'],
+    #                             nesterov=True)
 
     logger.debug(model)
     for name, param in model.named_parameters():
@@ -102,7 +102,6 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
                                                            val_rate=0.1,
                                                            n_splits=1,
                                                            random_seed=0)[0]
-
 
     train_dataset = REData.prepare_tensors(
         [train_rels[index] for index in train_indice],
@@ -160,11 +159,13 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
 
         logger.info("Kbest scores: %s" % kbest_scores)
 
-    best_checkpoint_file = get_checkpoint_file(checkpoint_base, monitor, kbest_scores[-1])
+    best_index = 0 if monitor.endswith('loss') else -1
+
+    best_checkpoint_file = get_checkpoint_file(checkpoint_base, monitor, kbest_scores[best_index])
 
     best_checkpoint = torch.load(best_checkpoint_file,
-                                        map_location=lambda storage,
-                                        loc: storage)
+                                 map_location=lambda storage,
+                                 loc: storage)
 
     # logger.info("test_acc, mean: %.4f, stdev: %.4f" % (mean(test_acc_history), stdev(test_acc_history)))
     logger.info("Final best %s: %.4f" % (monitor,
@@ -194,6 +195,7 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
                       test_data_loader,
                       targ2ix,
                       loss_func,
+                      param_space['omit_other'][0],
                       report_result=True)
 
 
@@ -202,8 +204,6 @@ def train_model(model, optimizer, kbest_scores,
                 targ2ix, checkpoint_base, **params):
 
     monitor = params['monitor']
-
-    loss_func = REModule.ranking_loss
 
     train_data_loader = Data.DataLoader(
         dataset=ModuleOptim.CustomizedDatasets(*train_data),
@@ -256,14 +256,18 @@ def train_model(model, optimizer, kbest_scores,
             model.zero_grad()
 
             pred_prob = model(*train_feats)
-            train_loss = loss_func(pred_prob, train_targ)
+            if params['ranking_loss']:
+                train_loss = REModule.ranking_loss(pred_prob, train_targ, omit_other=params['omit_other'])
+                train_pred = REModule.infer_pred(pred_prob, omit_other=params['omit_other'])
+            else:
+                train_loss = F.nll_loss(pred_prob, train_targ)
+                train_pred = torch.argmax(pred_prob, dim=1)
 
             train_loss.backward(retain_graph=True)
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=params['max_norm'])
             optimizer.step()
 
             epoch_losses.append(train_loss.item())
-            train_pred = REModule.infer_pred(pred_prob, omit_other=True)
             train_acc = (train_pred == train_targ).sum().item() / float(train_pred.numel())
             epoch_acces.append(train_acc)
 
@@ -272,7 +276,9 @@ def train_model(model, optimizer, kbest_scores,
                 _, _, [val_loss, val_acc, val_f1] = REEval.batch_eval(model,
                                                                       val_data_loader,
                                                                       targ2ix,
-                                                                      loss_func)
+                                                                      ranking_loss=params['ranking_loss'],
+                                                                      omit_other=params['omit_other']
+                                                                      )
 
                 eval_history['val_loss'].append(val_loss)
                 eval_history['val_acc'].append(val_acc)
@@ -288,9 +294,11 @@ def train_model(model, optimizer, kbest_scores,
                                                                          monitor_score,
                                                                          monitor,
                                                                          kbest=params['kbest_checkpoint'])
+                print(kbest_scores)
 
                 if is_kbest and len(kbest_scores) == params['kbest_checkpoint'] + 1:
-                    removed_score = kbest_scores.pop(0)
+                    removed_index = -1 if monitor.endswith('loss') else 0
+                    removed_score = kbest_scores.pop(removed_index)
                     ModuleOptim.delete_checkpoint(get_checkpoint_file(checkpoint_base,
                                                                       monitor,
                                                                       removed_score))
@@ -312,7 +320,9 @@ def train_model(model, optimizer, kbest_scores,
                 _, _, [test_loss, test_acc, test_f1] = REEval.batch_eval(model,
                                                                          test_data_loader,
                                                                          targ2ix,
-                                                                         loss_func)
+                                                                         ranking_loss=params['ranking_loss'],
+                                                                         omit_other=params['omit_other']
+                                                                         )
 
                 logger.debug(
                     'epoch: %2i, step: %4i, time: %4.1fs | '
@@ -377,14 +387,15 @@ def main():
         'fc1_dropout': [0.5],
         'batch_size': [32],
         'epoch_num': [3],
-        'lr': [3e-2],
-        'weight_decay': [1e-3],
-        'max_norm': [5],
+        'lr': [1e-0],
+        'weight_decay': [1e-4],
+        'max_norm': [3],
         'patience': [10],
-        'monitor': ['val_f1'],
+        'monitor': ['val_loss'],
         'check_interval': [20],    # checkpoint based on val performance given a step interval
         'kbest_checkpoint': [5],
         'ranking_loss': [True],
+        'omit_other': [True]
         # 'gamma': [2],
         # 'margin_pos': [2.5],
         # 'margin_neg': [0.5],

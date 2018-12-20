@@ -203,12 +203,16 @@ def ranking_loss(batch_pred_scores, batch_gold, gamma=2, margin_pos=2.5, margin_
     batch_size, targ_size = batch_pred_scores.shape
 
     if omit_other:
-        batch_pos_score = torch.stack([torch.tensor(2.5) if index == 18 else scores[index] \
-                                        for scores, index in zip(batch_pred_scores, batch_gold)])
+        batch_pos_score = torch.stack([torch.tensor(2.5).to(device) if index == 18 else scores[index]
+                                       for scores, index in zip(batch_pred_scores, batch_gold)])
     else:
         batch_pos_score = batch_pred_scores.gather(1, batch_gold.unsqueeze(1)).squeeze(1)  # batch * 1
 
-    batch_neg_score = get_neg_scores(batch_pred_scores, batch_gold, batch_size, targ_size, omit_other=omit_other)  # batch * 1
+    batch_neg_score = get_neg_scores(batch_pred_scores,
+                                     batch_gold,
+                                     batch_size,
+                                     targ_size,
+                                     omit_other=omit_other)  # batch * 1
 
     loss = torch.log(1 + torch.exp(gamma * (margin_pos - batch_pos_score))) + \
            torch.log(1 + torch.exp(gamma * (margin_neg + batch_neg_score)))
@@ -221,7 +225,7 @@ def infer_pred(batch_pred_scores, omit_other=True):
         batch_pred = []
         for scores in batch_pred_scores:
             if scores.max() < 0:
-                batch_pred.append(torch.tensor(18))
+                batch_pred.append(torch.tensor(18).to(device))
             else:
                 batch_pred.append(torch.argmax(scores))
         return torch.stack(batch_pred)
@@ -231,10 +235,9 @@ def infer_pred(batch_pred_scores, omit_other=True):
 
 class softmax_layer(nn.Module):
 
-    def __init__(self, model_out_dim, targ_size, omit_other=True):
+    def __init__(self, model_out_dim, targ_size):
         super(softmax_layer, self).__init__()
-        self.fc = nn.Linear(model_out_dim,
-                            targ_size - 1 if omit_other else targ_size)
+        self.fc = nn.Linear(model_out_dim, targ_size)
 
     def forward(self, model_out):
         fc_out = self.fc(model_out)
