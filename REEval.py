@@ -41,7 +41,7 @@ def batch_eval(model, data_loader, targ2ix, ranking_loss=False, omit_other=False
             loss = REModule.ranking_loss(pred_prob, targ, omit_other=omit_other).item()
             pred = REModule.infer_pred(pred_prob, omit_other=omit_other)
         else:
-            loss = F.nll_loss(pred_prob, targ)
+            loss = F.nll_loss(pred_prob, targ).item()
             pred = torch.argmax(pred_prob, dim=1)
         acc = (pred == targ).sum().item() / float(pred.numel())
         f1 = f1_score(
@@ -64,14 +64,15 @@ def batch_eval(model, data_loader, targ2ix, ranking_loss=False, omit_other=False
     return pred, targ, [loss, acc, f1]
 
 
-def eval_output(model, test_datset, targ2ix, pred_file, answer_file):
+def eval_output(model, test_datset, targ2ix, ranking_loss, omit_other, pred_file, answer_file):
 
     ix2targ = {v: k for k, v in targ2ix.items()}
 
     pred, targ, [loss, acc, f1] = batch_eval(model,
                                              test_datset,
                                              targ2ix,
-                                             REModule.ranking_loss)
+                                             ranking_loss,
+                                             omit_other)
 
     print('checkpoint performance: loss %.4f, acc %.4f, macro-F1 %.4f\n' % (loss, acc, f1))
 
@@ -123,9 +124,11 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
         num_workers=1,
     )
 
-    print("[checkpoint] loss %.4f, acc %.4f, f1 %.4f" % (checkpoint['val_loss'],
-                                                               checkpoint['val_acc'],
-                                                               checkpoint['val_f1']))
+    print("[checkpoint] loss %.4f, acc %.4f, f1 %.4f" % (
+        checkpoint['val_loss'],
+        checkpoint['val_acc'],
+        checkpoint['val_f1']
+    ))
 
     model = getattr(REModule, params['classification_model'])(
         len(word2ix), len(targ2ix),
@@ -134,7 +137,9 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
 
     model.load_state_dict(checkpoint['state_dict'])
 
-    eval_output(model, test_data_loader, targ2ix, pred_file, answer_file)
+    eval_output(model, test_data_loader, targ2ix,
+                params['ranking_loss'], params['omit_other'],
+                pred_file, answer_file)
 
     print(params)
 

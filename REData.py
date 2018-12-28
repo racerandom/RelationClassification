@@ -15,6 +15,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 
 # inner library
 from REObject import Relation
+from RESyntax import RESyntax
 
 
 def label_distrib(labels, report=False):
@@ -60,9 +61,9 @@ def data_reader(filename):
     return rel_list
 
 
-def prepare_feats(rel_data, PI=False):
+def prepare_feats(rel_data, word_tokenize, PI=False):
     for rel in rel_data:
-        rel.tokenize_sent(PI=PI)
+        rel.tokenize_sent(word_tokenize, PI=PI)
         rel.attach_feats('word_sent', rel.tokens)
         # pos_feat = rel.is_entity_feats()
         # rel.attach_feats('pos_sent', pos_feat)
@@ -184,12 +185,16 @@ def save_all_data(train_pickle_file, test_pickle_file, PI=False):
     train_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_training/TRAIN_FILE.TXT"
     test_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_testing_keys/TEST_FILE_FULL.TXT"
 
+    corenlp = RESyntax()
+
+    word_tokenize = corenlp.get_token
+
     train_data = data_reader(train_file)
-    prepare_feats(train_data, PI=PI)
+    prepare_feats(train_data, word_tokenize, PI=PI)
     pickle_data(train_data, pickle_file=train_pickle_file)
 
     test_data = data_reader(test_file)
-    prepare_feats(test_data, PI=PI)
+    prepare_feats(test_data, word_tokenize, PI=PI)
     pickle_data(test_data, pickle_file=test_pickle_file)
 
 
@@ -264,35 +269,17 @@ def main():
 
     train_file = "data/train%s.pkl" % ('.PI' if PI_feat else '')
     test_file = "data/test%s.pkl" % ('.PI' if PI_feat else '')
-    embed_file = "/Users/fei-c/Resources/embed/GoogleNews-vectors-negative300.bin"
-    embed_pickle_file = "data/GoogleNews%s.d300.embed" % ('.PI' if PI_feat else '')
+    embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
+    embed_pickle_file = "data/glove%s.100d.embed" % ('.PI' if PI_feat else '')
 
-    # save_all_data(train_file, test_file, PI=PI_feat)
+    save_all_data(train_file, test_file, PI=PI_feat)
 
     train_data = load_pickle(pickle_file=train_file)
     test_data = load_pickle(pickle_file=test_file)
 
     word2ix, targ2ix, max_sent_len = prepare_feat2ix(train_data + test_data)
 
-    print(targ2ix)
     slim_word_embed(word2ix, embed_file, embed_pickle_file)
-
-    # train_word, train_e1ix, train_e2ix, train_targs = generate_data(train_file,
-    #                                                                 word2ix,
-    #                                                                 targ2ix,
-    #                                                                 max_sent_len)
-    #
-    # val_word, val_e1ix, val_e2ix, val_targs = generate_data(val_file,
-    #                                                         word2ix,
-    #                                                         targ2ix,
-    #                                                         max_sent_len)
-    #
-    # test_word, test_e1ix, test_e2ix, test_targs = generate_data(test_file,
-    #                                                             word2ix,
-    #                                                             targ2ix,
-    #                                                             max_sent_len)
-    #
-    # print(word2ix['<e1>'], word2ix['</e1>'], word2ix['<e2>'], word2ix['</e2>'])
 
 
 if __name__ == '__main__':

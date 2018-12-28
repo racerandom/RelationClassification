@@ -1,6 +1,6 @@
 # coding=utf-8
 import xml.etree.ElementTree as ET
-from RESyntaxer import RESyntaxer
+
 
 
 class Relation():
@@ -55,11 +55,7 @@ class Relation():
     def e2_sur(self):
         return ' '.join([self.tokens[tid] for tid in self.e2_tids])
 
-    def tokenize_sent(self, PI=False):
-
-        corenlp = RESyntaxer()
-
-        word_tokenize = corenlp.get_token
+    def tokenize_sent(self, word_tokenize, lowercase=True, PI=False):
 
         text = "<S>%s</S>" % self.sent
         text = text.encode('utf-8')
@@ -89,6 +85,9 @@ class Relation():
                 curr_toks = word_tokenize(entity.tail)
                 self.tokens.extend(curr_toks)
                 tok_id += len(curr_toks)
+
+        if lowercase:
+            self.tokens = [tok.lower() for tok in self.tokens]
 
     def is_entity_feats(self):
         feats = []

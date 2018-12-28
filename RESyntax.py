@@ -2,6 +2,7 @@
 
 from stanfordcorenlp import StanfordCoreNLP
 from nltk.parse.dependencygraph import DependencyGraph, malt_demo
+
 import networkx as nx
 import json
 
@@ -28,7 +29,7 @@ def nxGraphWroot(dep_graph):
     return g
 
 
-class RESyntaxer():
+class RESyntax():
 
     def __init__(self):
         self.corenlp_server = StanfordCoreNLP('http://localhost', port=9000)

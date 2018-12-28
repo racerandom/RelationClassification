@@ -198,7 +198,7 @@ def get_neg_scores(batch_pred_scores, batch_gold, batch_size, targ_size, omit_ot
     return torch.stack(batch_neg_score)
 
 
-def ranking_loss(batch_pred_scores, batch_gold, gamma=2, margin_pos=2.5, margin_neg=0.5, omit_other=True):
+def ranking_loss(batch_pred_scores, batch_gold, gamma=2., margin_pos=2.5, margin_neg=0.5, omit_other=True):
 
     batch_size, targ_size = batch_pred_scores.shape
 
@@ -214,10 +214,12 @@ def ranking_loss(batch_pred_scores, batch_gold, gamma=2, margin_pos=2.5, margin_
                                      targ_size,
                                      omit_other=omit_other)  # batch * 1
 
-    loss = torch.log(1 + torch.exp(gamma * (margin_pos - batch_pos_score))) + \
-           torch.log(1 + torch.exp(gamma * (margin_neg + batch_neg_score)))
+    loss_pos = torch.log(1 + torch.exp(gamma * (margin_pos - batch_pos_score)))
+    loss_neg = torch.log(1 + torch.exp(gamma * (margin_neg + batch_neg_score)))
 
-    return loss.mean(dim=0)
+    print(loss_pos.mean(dim=0), loss_neg.mean(dim=0))
+
+    return (loss_pos + loss_neg).mean(dim=0)
 
 
 def infer_pred(batch_pred_scores, omit_other=True):
@@ -293,6 +295,69 @@ class baseRNN(baseNN):
         return model_out
 
 
+class baseSDPRep(baseNN):
+
+    def __init__(self, word_size, targ_size,
+                 max_sent_len, max_sdp_len,
+                 pre_embed, **params):
+
+        super(baseSDPRep, self).__init__(
+            word_size, targ_size,
+            max_sent_len, pre_embed, **params
+        )
+
+        self.max_sdp_len = max_sdp_len
+        self.cnn_input_dim = self.word_dim
+        self.filter_nb = params['filter_nb']
+        self.kernel_len = params['kernel_len']
+        self.cnn_droprate = params['sdp_cnn_droprate']
+        self.fc1_dim = params['sdp_fc1_dim']
+        self.fc1_droprate = params['sdp_fc1_droprate']
+
+
+class SDPRep(baseSDPRep):
+
+    def __init__(self, word_size, targ_size,
+                 max_sent_len, max_sdp_len,
+                 pre_embed, **params):
+
+        super(SDPRep, self).__init__(
+            word_size, targ_size,
+            max_sent_len, max_sdp_len,
+            pre_embed, **params
+        )
+
+        self.cnn = F.relu(nn.Conv1d(self.cnn_input_dim,
+                                    self.filter_nb,
+                                    self.kernel_len))
+
+        kernel_dim = self.max_sdp_len - self.kernel_len + 1
+
+        self.pool = nn.MaxPool1d(kernel_dim)
+
+        self.cnn_dropout = nn.Dropout(p=self.cnn_droprate)
+
+        self.fc1 = nn.Linear(self.filter_nb, self.fc1_dim)
+
+        self.fc1_dropout = nn.Dropout(p=self.fc1_droprate)
+
+    def forward(self, *tensor_feats):
+
+        # transpose (batch_size, seq_len, input_dim)
+        #               => (batch_size, input_dim, seq_len)
+        embed_input = self.word_embeddings(tensor_feats[0]).transpose(1, 2)
+
+        embed_input = self.input_dropout(embed_input)
+
+        c1_out = F.relu(self.cnn(embed_input))
+
+        p1_out = self.pool(c1_out).squeeze(-1)
+
+        fc1_out = self.fc1_dropout(F.relu(self.fc1(p1_out)))
+
+        return fc1_out
+
+
 class attnRNN(baseNN):
 
     def __init__(self, word_size, targ_size,
@@ -309,7 +374,7 @@ class attnRNN(baseNN):
                            batch_first=True,
                            bidirectional=True)
 
-        self.attn_W = torch.nn.Parameter(torch.empty(self.rnn_hidden_dim // 2).uniform_())
+        self.attn_W = torch.nn.Parameter(torch.empty(self.rnn_hidden_dim // 2).uniform_(-0.1, 0.1))
 
         self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
 
@@ -601,7 +666,9 @@ class entiAttnMatRNN(baseNN):
 
         self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
 
-        self.attn_M = torch.nn.Parameter(torch.empty(self.rnn_hidden_dim, self.rnn_hidden_dim).uniform_())
+        self.attn_e1_M = torch.nn.Parameter(torch.empty(self.rnn_hidden_dim, self.rnn_hidden_dim).uniform_(-0.1, 0.1))
+
+        self.attn_e2_M = torch.nn.Parameter(torch.empty(self.rnn_hidden_dim, self.rnn_hidden_dim).uniform_(-0.1, 0.1))
 
         self.attn_dropout = nn.Dropout(p=self.params['attn_dropout'])
 
@@ -635,9 +702,9 @@ class entiAttnMatRNN(baseNN):
         e1_hidden = batch_entity_hidden(rnn_out, tensor_feats[1])
         e2_hidden = batch_entity_hidden(rnn_out, tensor_feats[2])
 
-        attn_bM = self.attn_M.repeat(batch_size, 1, 1)
+        # attn_bM = self.attn_M.repeat(batch_size, 1, 1)
 
-        rnn_out_mat = torch.bmm(rnn_out, attn_bM)
+        # rnn_out_mat = torch.bmm(rnn_out, attn_bM)
 
         # e1_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e1_hidden.unsqueeze(2)).squeeze(2), dim=1)
         # e1_mat_out = torch.bmm(e1_mat_prob.unsqueeze(1), rnn_out).squeeze(1)
@@ -645,10 +712,10 @@ class entiAttnMatRNN(baseNN):
         # e2_mat_prob = F.softmax(torch.bmm(rnn_out_mat, e2_hidden.unsqueeze(2)).squeeze(2), dim=1)
         # e2_mat_out = torch.bmm(e2_mat_prob.unsqueeze(1), rnn_out).squeeze(1)
 
-        e1_alpha = F.softmax(torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_M, e1_hidden)))
+        e1_alpha = F.softmax(torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_e1_M, e1_hidden)))
         e1_mat_out = torch.einsum('bs,bsd->bd', (e1_alpha, rnn_out))
 
-        e2_alpha = F.softmax(torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_M, e2_hidden)))
+        e2_alpha = F.softmax(torch.einsum('bsd,de,be->bs', (rnn_out, self.attn_e2_M, e2_hidden)))
         e2_mat_out = torch.einsum('bs,bsd->bd', (e2_alpha, rnn_out))
 
         attn_out = self.attn_dropout(torch.cat((e1_mat_out, e2_mat_out), dim=1))
