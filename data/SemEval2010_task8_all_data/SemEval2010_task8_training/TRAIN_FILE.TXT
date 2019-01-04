@@ -7154,7 +7154,7 @@ Comment:
 Content-Container(e1,e2)
 Comment: prototypical example
 
-1790	"The imams were removed from a US Airways <e1>flight</e1> awaiting departure from the Minneapolis-St. Paul <e2>airport</e2>."
+1790	"The imams were removed from a US Airways <e1>flight</e1> awaiting departure from the Minneapolis St. Paul <e2>airport</e2>."
 Entity-Origin(e1,e2)
 Comment:
 

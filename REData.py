@@ -15,7 +15,7 @@ from sklearn.model_selection import StratifiedShuffleSplit
 
 # inner library
 from REObject import Relation
-from RESyntax import RESyntax
+import RESyntax
 
 
 def label_distrib(labels, report=False):
@@ -61,10 +61,15 @@ def data_reader(filename):
     return rel_list
 
 
-def prepare_feats(rel_data, word_tokenize, PI=False):
+def prepare_feats(rel_data, nlp_parser, SDP=False, PI=False):
     for rel in rel_data:
-        rel.tokenize_sent(word_tokenize, PI=PI)
-        rel.attach_feats('word_sent', rel.tokens)
+        if SDP:
+            rel.tokenize_sent(nlp_parser.tokenize, PI=PI)
+            sdp_feat = prepare_sdp_feat(rel, nlp_parser)
+            rel.attach_feats('word_sent', sdp_feat)
+        else:
+            rel.tokenize_sent(nlp_parser.tokenize, PI=PI)
+            rel.attach_feats('word_sent', rel.tokens)
         # pos_feat = rel.is_entity_feats()
         # rel.attach_feats('pos_sent', pos_feat)
 
@@ -185,16 +190,16 @@ def save_all_data(train_pickle_file, test_pickle_file, PI=False):
     train_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_training/TRAIN_FILE.TXT"
     test_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_testing_keys/TEST_FILE_FULL.TXT"
 
-    corenlp = RESyntax()
+    # nlp_parser = RESyntax.RESyntax()
 
-    word_tokenize = corenlp.get_token
+    nlp_parser = RESyntax.SpacyParser()
 
     train_data = data_reader(train_file)
-    prepare_feats(train_data, word_tokenize, PI=PI)
+    prepare_feats(train_data, nlp_parser, SDP=True, PI=PI)
     pickle_data(train_data, pickle_file=train_pickle_file)
 
     test_data = data_reader(test_file)
-    prepare_feats(test_data, word_tokenize, PI=PI)
+    prepare_feats(test_data, nlp_parser, SDP=True, PI=PI)
     pickle_data(test_data, pickle_file=test_pickle_file)
 
 
@@ -243,6 +248,17 @@ def stratified_split_val(train_rels, val_rate=0.1, n_splits=1, random_seed=0):
     for train_index, test_index in stratifed_spliter.split(train_rels, targs):
         n_indices.append((train_index, test_index))
     return n_indices
+
+
+def prepare_sdp_feat(rel, parser):
+    sdp_feat = parser.get_SDP(' '.join(rel.tokens), rel.e1_tids[-1], rel.e2_tids[-1])
+    # print(sdp_feat)
+    return sdp_feat
+
+
+# def prepare_word_feat(rel_data):
+#     word_feat = [rel.feat_inputs['word_sent'] for rel in rel_data]
+#     return word_feat
 
 
 def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len):

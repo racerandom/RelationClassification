@@ -158,16 +158,18 @@ def main():
 
     checkpoint_file = sys.argv[1]
 
-    pi_feat = '.PI' if checkpoint_file.split('_')[1] in [
-        'baseRNN',
-        'attnRNN',
-        'attnDotRNN',
-        'attnMatRNN'
-    ] else ''
+    # pi_feat = '.PI' if checkpoint_file.split('_')[1] in [
+    #     'baseRNN',
+    #     'attnRNN',
+    #     'attnDotRNN',
+    #     'attnMatRNN'
+    # ] else ''
 
-    train_file = "data/train%s.pkl" % pi_feat
-    test_file = "data/test%s.pkl" % pi_feat
-    embed_file = "data/glove%s.100d.embed" % pi_feat
+    pi_feat = False
+
+    train_file = "data/train%s.pkl" % ('.PI' if pi_feat else '')
+    test_file = "data/test%s.pkl" % ('.PI' if pi_feat else '')
+    embed_file = "data/glove%s.100d.embed" % ('.PI' if pi_feat else '')
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 

@@ -294,7 +294,7 @@ def train_model(model, optimizer, kbest_scores,
                                                                          monitor_score,
                                                                          monitor,
                                                                          kbest=params['kbest_checkpoint'])
-                print(kbest_scores)
+                # print(kbest_scores)
 
                 if is_kbest and len(kbest_scores) == params['kbest_checkpoint'] + 1:
                     removed_index = -1 if monitor.endswith('loss') else 0
@@ -386,29 +386,31 @@ def main():
         'fc1_hidden_dim': [200],
         'fc1_dropout': [0.5],
         'batch_size': [32],
-        'epoch_num': [3],
+        'epoch_num': [200],
         'lr': [1e-0],
         'weight_decay': [1e-4],
         'max_norm': [3],
         'patience': [10],
-        'monitor': ['val_loss'],
+        'monitor': ['val_f1'],
         'check_interval': [20],    # checkpoint based on val performance given a step interval
         'kbest_checkpoint': [5],
-        'ranking_loss': [True],
-        'omit_other': [True]
+        'ranking_loss': [False],
+        'omit_other': [False]
         # 'gamma': [2],
         # 'margin_pos': [2.5],
         # 'margin_neg': [0.5],
     }
 
-    pi_feat = '.PI' if classification_model in ['baseRNN',
-                                                'attnRNN',
-                                                'attnDotRNN',
-                                                'attnMatRNN'] else ''
+    # pi_feat = '.PI' if classification_model in ['baseRNN',
+    #                                             'attnRNN',
+    #                                             'attnDotRNN',
+    #                                             'attnMatRNN'] else ''
 
-    train_file = "data/train%s.pkl" % pi_feat
-    test_file = "data/test%s.pkl" % pi_feat
-    embed_file = "data/glove%s.100d.embed" % pi_feat
+    pi_feat = False
+
+    train_file = "data/train%s.pkl" % ('.PI' if pi_feat else '')
+    test_file = "data/test%s.pkl" % ('.PI' if pi_feat else '')
+    embed_file = "data/glove%s.100d.embed" % ('.PI' if pi_feat else '')
 
     optimize_model(train_file, test_file, embed_file, param_space, max_evals=1)
 

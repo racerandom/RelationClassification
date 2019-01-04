@@ -2,7 +2,6 @@
 import xml.etree.ElementTree as ET
 
 
-
 class Relation():
 
     def __init__(self, id=None, sent=None, comm=None, rel=None):
@@ -64,7 +63,7 @@ class Relation():
         tok_id = 0
 
         if root.text:
-            curr_toks = word_tokenize(root.text)
+            curr_toks = word_tokenize(root.text.strip())
             self.tokens.extend(curr_toks)
             tok_id += len(curr_toks)
 
@@ -73,7 +72,8 @@ class Relation():
                 if PI:
                     self.tokens.append('<%s>' % entity.tag)
                     tok_id += 1
-                for tok in word_tokenize(entity.text):
+
+                for tok in word_tokenize(entity.text.strip()):
                     self.tokens.append(tok)
                     entity_ids = getattr(self, 'e%i_tids' % (index + 1))
                     entity_ids.append(tok_id)
@@ -82,12 +82,21 @@ class Relation():
                     self.tokens.append('</%s>' % entity.tag)
                     tok_id += 1
             if entity.tail:
-                curr_toks = word_tokenize(entity.tail)
+                curr_toks = word_tokenize(entity.tail.strip())
                 self.tokens.extend(curr_toks)
                 tok_id += len(curr_toks)
 
         if lowercase:
             self.tokens = [tok.lower() for tok in self.tokens]
+
+    def parse_SDP(self, parser):
+
+        joined_tokens = ' '.join(self.tokens)
+
+        doc = parser.parse(joined_tokens)
+
+
+
 
     def is_entity_feats(self):
         feats = []

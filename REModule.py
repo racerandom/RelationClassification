@@ -153,13 +153,7 @@ class ranking_layer(nn.Module):
 
     def forward(self, batch_model_out):
 
-        # batch_out: batch_size * out_dim, batch_gold: batch * 1
-
         batch_size = batch_model_out.shape[0]
-
-        # batch_targ_weights = self.targ_weight.repeat(batch_size, 1, 1)  # batch_size * out_dim * targ_size
-        #
-        # batch_pred_scores = torch.bmm(batch_model_out.unsqueeze(1), batch_targ_weights).squeeze(1)  # batch * targ_size
 
         batch_pred_scores = torch.einsum('bd,dt->bt', (batch_model_out, self.targ_weight))
 
@@ -167,21 +161,6 @@ class ranking_layer(nn.Module):
 
 
 def get_neg_scores(batch_pred_scores, batch_gold, batch_size, targ_size, omit_other=True):
-    # batch_out: batch_size * out_dim, batch_gold: batch * 1
-    # mask = torch.ones_like(batch_pred_scores, dtype=torch.uint8)  # batch_size * out_dim
-    #
-    # for i in range(batch_gold.shape[0]):
-    #     if omit_other and batch_gold[i] == targ_size:
-    #         continue
-    #     mask[i][batch_gold[i]] = 0
-    #
-    # batch_neg_out = batch_pred_scores.masked_select(mask)
-    #
-    # assert batch_neg_out.shape[0] == batch_size * (targ_size - 1)
-    #
-    # batch_neg_scores = batch_neg_out.view(batch_size, targ_size - 1).max(dim=1)[0]
-    #
-    # return batch_neg_scores
 
     batch_neg_score = []
     for i in range(len(batch_pred_scores)):
@@ -217,7 +196,7 @@ def ranking_loss(batch_pred_scores, batch_gold, gamma=2., margin_pos=2.5, margin
     loss_pos = torch.log(1 + torch.exp(gamma * (margin_pos - batch_pos_score)))
     loss_neg = torch.log(1 + torch.exp(gamma * (margin_neg + batch_neg_score)))
 
-    print(loss_pos.mean(dim=0), loss_neg.mean(dim=0))
+    # print(loss_pos.mean(dim=0), loss_neg.mean(dim=0))
 
     return (loss_pos + loss_neg).mean(dim=0)
 
