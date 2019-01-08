@@ -40,44 +40,37 @@ def catOverTime(net_out, cat_method, dim=1):
     return net_out
 
 
-class baseNN(nn.Module):
+class baseConfig():
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
-        super(baseNN, self).__init__()
-
+                 max_sent_len, **params):
+        # super(baseNN, self).__init__()
         self.params = params
         self.rnn_hidden_dim = self.params['rnn_hidden_dim']
         self.word_size = word_size
         self.targ_size = targ_size
         self.max_sent_len = max_sent_len
 
-        if isinstance(pre_embed, np.ndarray):
-            self.word_dim = pre_embed.shape[1]
-            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
-
-        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
-
     def init_rnn_hidden(self, batch_size, hidden_dim, num_layer=1, bidirectional=True):
         bi_num = 2 if bidirectional else 1
         return (torch.zeros(num_layer * bi_num, batch_size, hidden_dim // bi_num).to(device),
                 torch.zeros(num_layer * bi_num, batch_size, hidden_dim // bi_num).to(device))
 
-    def attn_dot_input(self, *tensor_feats):
-
-        batch_size = tensor_feats[0].shape[0]
-
-        word_embed_M = self.word_embeddings(tensor_feats[0]) # (batch, max_sent, word_dim)
-
-        e1_embed = batch_entity_hidden(word_embed_M, tensor_feats[1]) # (batch, word_dim)
-        e2_embed = batch_entity_hidden(word_embed_M, tensor_feats[2]) # (batch, word_dim)
-
-        e1_dot_weight = F.softmax(torch.bmm(word_embed_M, e1_embed.unsqueeze(2)).squeeze(), dim=1)
-        e2_dot_weight = F.softmax(torch.bmm(word_embed_M, e2_embed.unsqueeze(2)).squeeze(), dim=1)
-        dot_weight = (e1_dot_weight + e2_dot_weight) /2 # average weights
-        attn_applied_M = torch.bmm(dot_weight.unsqueeze(1), word_embed_M).squeeze()
-
-        return attn_applied_M
+    # def attn_dot_input(self, *tensor_feats):
+    #
+    #     batch_size = tensor_feats[0].shape[0]
+    #
+    #     word_embed_M = self.word_embeddings(tensor_feats[0]) # (batch, max_sent, word_dim)
+    #
+    #     e1_embed = batch_entity_hidden(word_embed_M, tensor_feats[1]) # (batch, word_dim)
+    #     e2_embed = batch_entity_hidden(word_embed_M, tensor_feats[2]) # (batch, word_dim)
+    #
+    #     e1_dot_weight = F.softmax(torch.bmm(word_embed_M, e1_embed.unsqueeze(2)).squeeze(), dim=1)
+    #     e2_dot_weight = F.softmax(torch.bmm(word_embed_M, e2_embed.unsqueeze(2)).squeeze(), dim=1)
+    #     dot_weight = (e1_dot_weight + e2_dot_weight) /2 # average weights
+    #     attn_applied_M = torch.bmm(dot_weight.unsqueeze(1), word_embed_M).squeeze()
+    #
+    #     return attn_applied_M
 
 
 class attnLayer(nn.Module):
@@ -226,13 +219,22 @@ class softmax_layer(nn.Module):
         return softmax_out
 
 
-class baseRNN(baseNN):
+class baseRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(baseRNN, self).__init__(word_size, targ_size,
-                                      max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
+
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -274,76 +276,121 @@ class baseRNN(baseNN):
         return model_out
 
 
-class baseSDPRep(baseNN):
+class tokenSDP(nn.Module):
 
-    def __init__(self, word_size, targ_size,
-                 max_sent_len, max_sdp_len,
-                 pre_embed, **params):
+    def __init__(self, word_dim, max_sdp_len, **params):
 
-        super(baseSDPRep, self).__init__(
-            word_size, targ_size,
-            max_sent_len, pre_embed, **params
-        )
+        nn.Module.__init__(self)
 
-        self.max_sdp_len = max_sdp_len
-        self.cnn_input_dim = self.word_dim
-        self.filter_nb = params['filter_nb']
-        self.kernel_len = params['kernel_len']
-        self.cnn_droprate = params['sdp_cnn_droprate']
-        self.fc1_dim = params['sdp_fc1_dim']
-        self.fc1_droprate = params['sdp_fc1_droprate']
+        self.cnn = nn.Conv1d(word_dim,
+                             params['sdp_filter_nb'],
+                             params['sdp_kernel_len'])
 
-
-class SDPRep(baseSDPRep):
-
-    def __init__(self, word_size, targ_size,
-                 max_sent_len, max_sdp_len,
-                 pre_embed, **params):
-
-        super(SDPRep, self).__init__(
-            word_size, targ_size,
-            max_sent_len, max_sdp_len,
-            pre_embed, **params
-        )
-
-        self.cnn = F.relu(nn.Conv1d(self.cnn_input_dim,
-                                    self.filter_nb,
-                                    self.kernel_len))
-
-        kernel_dim = self.max_sdp_len - self.kernel_len + 1
+        kernel_dim = max_sdp_len - params['sdp_kernel_len'] + 1
 
         self.pool = nn.MaxPool1d(kernel_dim)
 
-        self.cnn_dropout = nn.Dropout(p=self.cnn_droprate)
+        self.cnn_dropout = nn.Dropout(p=params['sdp_cnn_droprate'])
 
-        self.fc1 = nn.Linear(self.filter_nb, self.fc1_dim)
+        self.fc = nn.Linear(params['sdp_filter_nb'], params['sdp_fc_dim'])
 
-        self.fc1_dropout = nn.Dropout(p=self.fc1_droprate)
+        self.fc_dropout = nn.Dropout(p=params['sdp_fc_droprate'])
+
+    def forward(self, embed_input):
+
+        cnn_out = F.relu(self.cnn(embed_input.transpose(1, 2)))
+
+        pool_out = self.cnn_dropout(self.pool(cnn_out).squeeze(-1))
+
+        fc_out = self.fc_dropout(F.relu(self.fc(pool_out)))
+
+        return fc_out
+
+
+class TSDPRNN(baseConfig, nn.Module):
+
+    def __init__(self, word_size, targ_size,
+                 max_sent_len, max_sdp_len, pre_embed, **params):
+
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
+
+        self.sdp_cnn = tokenSDP(
+            self.word_dim, max_sdp_len, **params
+        )
+
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
+
+        self.rnn_input_dim = self.word_dim + 2 * self.params['sdp_fc_dim']
+
+        self.rnn = nn.LSTM(self.rnn_input_dim,
+                           self.rnn_hidden_dim // 2,
+                           num_layers=self.params['rnn_layer'],
+                           batch_first=True,
+                           bidirectional=True)
+
+        self.rnn_dropout = nn.Dropout(p=self.params['rnn_dropout'])
+
+        if self.params['ranking_loss']:
+            self.output_layer = ranking_layer(self.rnn_hidden_dim,
+                                              targ_size)
+        else:
+            self.output_layer = softmax_layer(self.rnn_hidden_dim,
+                                              targ_size)
 
     def forward(self, *tensor_feats):
 
-        # transpose (batch_size, seq_len, input_dim)
-        #               => (batch_size, input_dim, seq_len)
-        embed_input = self.word_embeddings(tensor_feats[0]).transpose(1, 2)
+        batch_size = tensor_feats[0].shape[0]
 
-        embed_input = self.input_dropout(embed_input)
+        word_embed_input = self.word_embeddings(tensor_feats[0])
 
-        c1_out = F.relu(self.cnn(embed_input))
+        tsdp_e1_input = self.word_embeddings(tensor_feats[-2].view(batch_size * self.max_sent_len, -1))
+        tsdp_e2_input = self.word_embeddings(tensor_feats[-1].view(batch_size * self.max_sent_len, -1))
 
-        p1_out = self.pool(c1_out).squeeze(-1)
+        tsdp_e1 = self.sdp_cnn(self.input_dropout(tsdp_e1_input))
+        tsdp_e2 = self.sdp_cnn(self.input_dropout(tsdp_e2_input))
 
-        fc1_out = self.fc1_dropout(F.relu(self.fc1(p1_out)))
+        rnn_input = torch.cat((self.input_dropout(word_embed_input),
+                               tsdp_e1.view(batch_size, self.max_sent_len, -1),
+                               tsdp_e2.view(batch_size, self.max_sent_len, -1)), dim=-1)
 
-        return fc1_out
+
+        rnn_hidden = self.init_rnn_hidden(batch_size,
+                                          self.rnn_hidden_dim,
+                                          num_layer=self.params['rnn_layer'])
+
+        rnn_out, rnn_hidden = self.rnn(rnn_input, rnn_hidden)
+
+        # fc_in = torch.cat(torch.unbind(rnn_hidden[0],dim=0), dim=1) ## last hidden state
+
+        rnn_out = self.rnn_dropout(catOverTime(rnn_out, 'max'))
+
+        model_out = self.output_layer(rnn_out)
+
+        return model_out
 
 
-class attnRNN(baseNN):
+class attnRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnRNN, self).__init__(word_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -398,13 +445,20 @@ class attnRNN(baseNN):
         return model_out
 
 
-class attnInBaseRNN(baseNN):
+class attnInBaseRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnInBaseRNN, self).__init__(word_size, targ_size,
-                                            max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -450,13 +504,20 @@ class attnInBaseRNN(baseNN):
         return model_out
 
 
-class attnDotRNN(baseNN):
+class attnDotRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnDotRNN, self).__init__(word_size, targ_size,
-                                         max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -502,13 +563,20 @@ class attnDotRNN(baseNN):
         return model_out
 
 
-class attnMatRNN(baseNN):
+class attnMatRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(attnMatRNN, self).__init__(word_size, targ_size,
-                                         max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -564,13 +632,20 @@ class attnMatRNN(baseNN):
         return model_out
 
 
-class entiAttnDotRNN(baseNN):
+class entiAttnDotRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(entiAttnDotRNN, self).__init__(word_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -627,13 +702,20 @@ class entiAttnDotRNN(baseNN):
         return model_out
 
 
-class entiAttnMatRNN(baseNN):
+class entiAttnMatRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(entiAttnMatRNN, self).__init__(word_size, targ_size,
-                                    max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -706,13 +788,20 @@ class entiAttnMatRNN(baseNN):
         return model_out
 
 
-class mulEntiAttnDotRNN(baseNN):
+class mulEntiAttnDotRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
                  max_sent_len, pre_embed, **params):
 
-        super(mulEntiAttnDotRNN, self).__init__(word_size, targ_size,
-                                                max_sent_len, pre_embed, **params)
+        baseConfig.__init__(
+            self, word_size, targ_size,
+            max_sent_len, **params
+        )
+        nn.Module.__init__(self)
+
+        if isinstance(pre_embed, np.ndarray):
+            self.word_dim = pre_embed.shape[1]
+            self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
         self.rnn_input_dim = self.word_dim
 

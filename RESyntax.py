@@ -4,6 +4,7 @@ from stanfordcorenlp import StanfordCoreNLP
 from nltk.parse.dependencygraph import DependencyGraph, malt_demo
 import spacy
 from spacy import displacy
+import unittest
 
 import networkx as nx
 import json
@@ -85,7 +86,7 @@ class CorenlpParser:
 
 
 def sbd_component(doc):
-    for i, token in enumerate(doc[:-2]):
+    for i, token in enumerate(doc):
         # define sentence start if period + titlecase token
         # if token.text == '.' and doc[i+1].is_title:
         #     doc[i+1].sent_start = False
@@ -96,8 +97,8 @@ def sbd_component(doc):
 
 class SpacyParser:
 
-    def __init__(self):
-        self.parser = spacy.load('en')
+    def __init__(self, model='en'):
+        self.parser = spacy.load(model)
         self.parser.add_pipe(sbd_component, before='tagger')
 
     def tokenize(self, text):
@@ -146,6 +147,60 @@ class SpacyParser:
             print('[SDP ERROR] %s, %s' % (text.split()[sour_id], text.split()[targ_id]))
             print(str(ex))
 
+    def get_token_sdp(self, text, sour_id, targ_id, returnWord=True, onlyID=True):
+        try:
+            doc = self.parser(text)
+
+            # Load spacy's dependency tree into a networkx graph
+            edges = []
+
+            for token in doc:
+                # FYI https://spacy.io/docs/api/token
+                for child in token.children:
+                    if onlyID:
+                        edges.append(('%i' % token.i, '%i' % child.i))
+                    else:
+                        edges.append(('{0}-{1}'.format(token.lower_, token.i),
+                                      '{0}-{1}'.format(child.lower_, child.i)))
+
+            graph = nx.Graph(edges)
+
+            sour_sdp_ids = [nx.shortest_path(graph, source=str(token.i), target=str(sour_id)) for token in doc]
+
+            targ_sdp_ids = [nx.shortest_path(graph, source=str(token.i), target=str(targ_id)) for token in doc]
+
+            sour_sdp_toks = [[doc[int(id)].text for id in sdp] for sdp in sour_sdp_ids]
+
+            targ_sdp_toks = [[doc[int(id)].text for id in sdp] for sdp in targ_sdp_ids]
+
+            if returnWord:
+                return sour_sdp_toks, targ_sdp_toks
+            else:
+                return sour_sdp_ids, targ_sdp_ids
+
+        except Exception as ex:
+            print('[SDP ERROR] %s, %s, %s' % (text, sour_id, targ_id))
+            print('[SDP ERROR] %s, %s' % (text.split()[sour_id], text.split()[targ_id]))
+            print(str(ex))
+
+
+class TestRESyntax(unittest.TestCase):
+
+    def __init__(self, *args, **kwargs):
+        super(TestRESyntax, self).__init__(*args, **kwargs)
+        self.parser = SpacyParser(model='en_core_web_lg')
+        self.text = "new haven police chief james lewis left his post after his contract expired jan. 31 ."
+
+    def test_get_SDP_reps(self):
+        sour_sdp_toks, targ_sdp_toks = self.parser.get_token_sdp(self.text, 6, 10)
+        for sdp in sour_sdp_toks:
+            print(sdp)
+        for sdp in targ_sdp_toks:
+            print(sdp)
+
+    def test_visualize(self):
+        print(self.parser.tokenize(self.text))
+        self.parser.visualize(self.text)
 
 # parser = SpacyParser()
 #

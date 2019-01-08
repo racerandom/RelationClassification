@@ -61,17 +61,27 @@ def data_reader(filename):
     return rel_list
 
 
-def prepare_feats(rel_data, nlp_parser, SDP=False, PI=False):
+def prepare_feats(rel_data, nlp_parser, TSDP=False, SDP=False, PI=False):
+
     for rel in rel_data:
+        rel.tokenize_sent(nlp_parser.tokenize, PI=PI)
+        rel.attach_feats('seq_sent', rel.tokens)
+
         if SDP:
-            rel.tokenize_sent(nlp_parser.tokenize, PI=PI)
-            sdp_feat = prepare_sdp_feat(rel, nlp_parser)
-            rel.attach_feats('word_sent', sdp_feat)
-        else:
-            rel.tokenize_sent(nlp_parser.tokenize, PI=PI)
-            rel.attach_feats('word_sent', rel.tokens)
-        # pos_feat = rel.is_entity_feats()
-        # rel.attach_feats('pos_sent', pos_feat)
+            sdp = nlp_parser.get_SDP(
+                ' '.join(rel.tokens),
+                rel.e1_tids[-1],
+                rel.e2_tids[-1]
+            )
+            rel.attach_feats('seq_sdp', sdp)
+
+        if TSDP:
+            token_sdp = nlp_parser.get_token_sdp(
+                ' '.join(rel.tokens),
+                rel.e1_tids[-1],
+                rel.e2_tids[-1],
+            )
+            rel.attach_feats('token_sdp', token_sdp)
 
 
 def load_pre_embed(embed_file, binary):
@@ -169,6 +179,12 @@ def prepare_seq_2d(seq_2d, to_ix, unk_ix=0):
     return ix_seq_2d
 
 
+# convert 3D token sequences to token_index sequences
+def prepare_seq_3d(seq_3d, to_ix, unk_ix=0):
+    ix_seq_2d = [[[tok2ix(tok, to_ix, unk_ix) for tok in seq_1d] for seq_1d in seq_2d] for seq_2d in seq_3d]
+    return ix_seq_2d
+
+
 # padding 2D index sequences to a fixed given length
 def padding_2d(seq_2d, max_seq_len, padding=0, direct='right'):
 
@@ -181,25 +197,49 @@ def padding_2d(seq_2d, max_seq_len, padding=0, direct='right'):
     return seq_2d
 
 
+# padding 3D char index sequences with fixed max_seq_len, max_char_len
+def padding_3d(seq_3d, max_2d_len, max_3d_len, padding=0, direct='right'):
+
+    for seq_2d in seq_3d:
+
+        for seq_1d in seq_2d:
+            for i in range(max_3d_len - len(seq_1d)):
+                if direct in ['right']:
+                    seq_1d.append(padding)
+                else:
+                    seq_1d.insert(0, padding)
+
+        for j in range(max_2d_len - len(seq_2d)):
+            if direct in ['right']:
+                seq_2d.append([padding] * max_3d_len)
+            else:
+                seq_2d.insert(0, [padding] * max_3d_len)
+    return seq_3d
+
+
 def max_len_2d(seq_2d):
-    return max([len(seq) for seq in seq_2d])
+    return max([len(seq_1d) for seq_1d in seq_2d])
 
 
-def save_all_data(train_pickle_file, test_pickle_file, PI=False):
+def max_len_3d(seq_3d):
+    return max([len(seq_1d) for seq_2d in seq_3d for seq_1d in seq_2d])
 
-    train_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_training/TRAIN_FILE.TXT"
-    test_file = "data/SemEval2010_task8_all_data/SemEval2010_task8_testing_keys/TEST_FILE_FULL.TXT"
 
-    # nlp_parser = RESyntax.RESyntax()
+def save_all_data(train_pickle_file, test_pickle_file,
+                  nlp_parser, TSDP=False, SDP=False, PI=False):
 
-    nlp_parser = RESyntax.SpacyParser()
+    train_file = "data/SemEval2010_task8_all_data/" \
+                 "SemEval2010_task8_training/TRAIN_FILE.TXT"
+    test_file = "data/SemEval2010_task8_all_data/" \
+                "SemEval2010_task8_testing_keys/TEST_FILE_FULL.TXT"
+
 
     train_data = data_reader(train_file)
-    prepare_feats(train_data, nlp_parser, SDP=True, PI=PI)
+    prepare_feats(train_data, nlp_parser, TSDP=TSDP, SDP=SDP, PI=PI)
     pickle_data(train_data, pickle_file=train_pickle_file)
 
     test_data = data_reader(test_file)
-    prepare_feats(test_data, nlp_parser, SDP=True, PI=PI)
+    prepare_feats(test_data, nlp_parser, TSDP=TSDP, SDP=SDP, PI=PI)
     pickle_data(test_data, pickle_file=test_pickle_file)
 
 
@@ -211,19 +251,25 @@ def slim_word_embed(word2ix, embed_file, embed_pickle_file):
 
 def prepare_feat2ix(dataset):
 
-    word_feat = [rel.feat_inputs['word_sent'] for rel in dataset]
-    max_sent_len = max_len_2d(word_feat)
-    rel_label = [rel.rel for rel in dataset]
+    token_sent = [rel.feat_inputs['seq_sent'] for rel in dataset]
+    max_sent_len = max_len_2d(token_sent)
+    word2ix = feat_to_ix(token_sent)
 
-    word2ix = feat_to_ix(word_feat)
+    token_sdp_e1 = [rel.feat_inputs['token_sdp'][0] for rel in dataset]
+    token_sdp_e2 = [rel.feat_inputs['token_sdp'][1] for rel in dataset]
+
+    max_sdp_len = max(max_len_3d(token_sdp_e1), max_len_3d(token_sdp_e2))
+
+    rel_label = [rel.rel for rel in dataset]
     targ2ix = targ_to_ix(rel_label)
 
-    print(targ2ix)
-
-    print("[data2ix] word vocab %i, targ size %i, max sent len %i\n" % (len(word2ix),
-                                               len(targ2ix),
-                                               max_sent_len))
-    return word2ix, targ2ix, max_sent_len
+    print("[data2ix] word vocab %i, targ size %i, max sent len %i, max sdp len %i\n" % (
+        len(word2ix),
+        len(targ2ix),
+        max_sent_len,
+        max_sdp_len
+    ))
+    return word2ix, targ2ix, max_sent_len, max_sdp_len
 
 
 def stratified_split_val(train_rels, val_rate=0.1, n_splits=1, random_seed=0):
@@ -261,11 +307,15 @@ def prepare_sdp_feat(rel, parser):
 #     return word_feat
 
 
-def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len):
+def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len, max_sdp_len):
 
-    word_feat = [rel.feat_inputs['word_sent'] for rel in rel_data]
-    word_list = prepare_seq_2d(word_feat, word2ix)
-    word_t = torch.tensor(padding_2d(word_list, max_sent_len))
+    word_feat = [rel.feat_inputs['seq_sent'] for rel in rel_data]
+    word_t = torch.tensor(padding_2d(prepare_seq_2d(word_feat, word2ix), max_sent_len))
+
+    tsdp_e1 = [rel.feat_inputs['token_sdp'][0] for rel in rel_data]
+    tsdp_e2 = [rel.feat_inputs['token_sdp'][1] for rel in rel_data]
+    tsdp_e1_t = torch.tensor(padding_3d(prepare_seq_3d(tsdp_e1, word2ix), max_sent_len, max_sdp_len))
+    tsdp_e2_t = torch.tensor(padding_3d(prepare_seq_3d(tsdp_e2, word2ix), max_sent_len, max_sdp_len))
 
     targs = [rel.rel for rel in rel_data]
     targ_t = torch.tensor(prepare_seq_1d(targs, targ2ix))
@@ -276,25 +326,34 @@ def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len):
     print("[Data] tensor feats are prepared : word %s, targs %s\n" % (word_t.shape,
                                                                       targ_t.shape))
 
-    return word_t, e1ix_l, e2ix_l, targ_t
+    return word_t, e1ix_l, e2ix_l, tsdp_e1_t, tsdp_e2_t, targ_t
 
 
 def main():
 
-    PI_feat = False
+    pi_feat = False
+    sdp_feat = False
+    tsdp_feat = True
 
-    train_file = "data/train%s.pkl" % ('.PI' if PI_feat else '')
-    test_file = "data/test%s.pkl" % ('.PI' if PI_feat else '')
-    embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
-    embed_pickle_file = "data/glove%s.100d.embed" % ('.PI' if PI_feat else '')
+    feat_suffix = ''
+    feat_suffix += '.SDP' if sdp_feat else ''
+    feat_suffix += '.TSDP' if tsdp_feat else ''
+    feat_suffix += '.PI' if pi_feat else ''
 
-    save_all_data(train_file, test_file, PI=PI_feat)
+    train_file = "data/train%s.pkl" % feat_suffix
+    test_file = "data/test%s.pkl" % feat_suffix
+
+    nlp_parser = RESyntax.SpacyParser(model='en_core_web_lg')
+
+    save_all_data(train_file, test_file, nlp_parser, TSDP=tsdp_feat, SDP=sdp_feat, PI=pi_feat)
 
     train_data = load_pickle(pickle_file=train_file)
     test_data = load_pickle(pickle_file=test_file)
 
-    word2ix, targ2ix, max_sent_len = prepare_feat2ix(train_data + test_data)
+    word2ix, targ2ix, max_sent_len, max_sdp_len = prepare_feat2ix(train_data + test_data)
 
+    embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
+    embed_pickle_file = "data/glove.100d.embed"
     slim_word_embed(word2ix, embed_file, embed_pickle_file)
 
 

@@ -54,11 +54,11 @@ def get_checkpoint_file(checkpoint_base, monitor, score):
 
 
 def model_instance(word_size, targ_size,
-                   max_sent_len, pre_embed, **params):
+                   max_sent_len, max_sdp_len, pre_embed, **params):
 
     model = getattr(REModule, params['classification_model'])(
         word_size, targ_size,
-        max_sent_len, pre_embed, **params
+        max_sent_len, max_sdp_len, pre_embed, **params
     ).to(device=device)
 
     optimizer = torch.optim.Adadelta(filter(lambda p: p.requires_grad, model.parameters()),
@@ -96,7 +96,7 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
 
     test_rels = REData.load_pickle(pickle_file=test_file)
 
-    word2ix, targ2ix, max_sent_len = REData.prepare_feat2ix(train_rels + test_rels)
+    word2ix, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
 
     train_indice, val_indice = REData.stratified_split_val(train_rels,
                                                            val_rate=0.1,
@@ -107,21 +107,24 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
         [train_rels[index] for index in train_indice],
         word2ix,
         targ2ix,
-        max_sent_len
+        max_sent_len,
+        max_sdp_len
     )
 
     val_dataset = REData.prepare_tensors(
         [train_rels[index] for index in val_indice],
         word2ix,
         targ2ix,
-        max_sent_len
+        max_sent_len,
+        max_sdp_len
     )
 
     test_dataset = REData.prepare_tensors(
         test_rels,
         word2ix,
         targ2ix,
-        max_sent_len
+        max_sent_len,
+        max_sdp_len
     )
 
     embed_weights = REData.load_pickle(embed_file)
@@ -145,7 +148,7 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
         logger.info('[Selected %i Params]: %s' % (eval_i, params))
 
         model, optimizer = model_instance(len(word2ix), len(targ2ix),
-                                          max_sent_len, embed_weights, **params)
+                                          max_sent_len, max_sdp_len, embed_weights, **params)
 
         # global_best_score = ModuleOptim.get_best_score(global_eval_history['monitor_score'], monitor)
 
@@ -373,11 +376,16 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    classification_model = 'baseRNN'
+    classification_model = 'TSDPRNN'
 
     param_space = {
         'classification_model': [classification_model],
         'freeze_mode': [False],
+        'sdp_filter_nb': [100],
+        'sdp_kernel_len': [3],
+        'sdp_cnn_droprate': [0.5],
+        'sdp_fc_dim': [50],
+        'sdp_fc_droprate': [0.5],
         'input_dropout': [0.3],
         'rnn_hidden_dim': [200],
         'rnn_layer': [1],
@@ -392,7 +400,7 @@ def main():
         'max_norm': [3],
         'patience': [10],
         'monitor': ['val_f1'],
-        'check_interval': [20],    # checkpoint based on val performance given a step interval
+        'check_interval': [100],    # checkpoint based on val performance given a step interval
         'kbest_checkpoint': [5],
         'ranking_loss': [False],
         'omit_other': [False]
@@ -407,10 +415,17 @@ def main():
     #                                             'attnMatRNN'] else ''
 
     pi_feat = False
+    sdp_feat = False
+    tsdp_feat = True
 
-    train_file = "data/train%s.pkl" % ('.PI' if pi_feat else '')
-    test_file = "data/test%s.pkl" % ('.PI' if pi_feat else '')
-    embed_file = "data/glove%s.100d.embed" % ('.PI' if pi_feat else '')
+    feat_suffix = ''
+    feat_suffix += '.SDP' if sdp_feat else ''
+    feat_suffix += '.TSDP' if tsdp_feat else ''
+    feat_suffix += '.PI' if pi_feat else ''
+
+    train_file = "data/train%s.pkl" % feat_suffix
+    test_file = "data/test%s.pkl" % feat_suffix
+    embed_file = "data/glove.100d.embed"
 
     optimize_model(train_file, test_file, embed_file, param_space, max_evals=1)
 
