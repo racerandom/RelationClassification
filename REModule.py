@@ -392,6 +392,8 @@ class attnRNN(baseConfig, nn.Module):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
+
         self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
@@ -460,6 +462,8 @@ class attnInBaseRNN(baseConfig, nn.Module):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
+
         self.rnn_input_dim = self.word_dim
 
         self.attn_input = dotAttn()
@@ -519,6 +523,8 @@ class attnDotRNN(baseConfig, nn.Module):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
+
         self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
@@ -577,6 +583,8 @@ class attnMatRNN(baseConfig, nn.Module):
         if isinstance(pre_embed, np.ndarray):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
+
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -647,6 +655,8 @@ class entiAttnDotRNN(baseConfig, nn.Module):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
 
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
+
         self.rnn_input_dim = self.word_dim
 
         self.rnn = nn.LSTM(self.rnn_input_dim,
@@ -716,6 +726,8 @@ class entiAttnMatRNN(baseConfig, nn.Module):
         if isinstance(pre_embed, np.ndarray):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
+
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
 
         self.rnn_input_dim = self.word_dim
 
@@ -802,6 +814,8 @@ class mulEntiAttnDotRNN(baseConfig, nn.Module):
         if isinstance(pre_embed, np.ndarray):
             self.word_dim = pre_embed.shape[1]
             self.word_embeddings = REData.pre2embed(pre_embed, freeze_mode=self.params['freeze_mode'])
+
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
 
         self.rnn_input_dim = self.word_dim
 
