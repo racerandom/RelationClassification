@@ -10,6 +10,7 @@ import networkx as nx
 import json
 
 
+
 def nxGraphWroot(dep_graph):
     """Convert the data in a ``nodelist`` into a networkx labeled directed graph.
         Include the ROOT node
@@ -183,20 +184,31 @@ class SpacyParser:
             print('[SDP ERROR] %s, %s' % (text.split()[sour_id], text.split()[targ_id]))
             print(str(ex))
 
+    def get_sdp_dist(self, text, sour_id, targ_id):
+        sdp_e1_ids, sdp_e2_ids = self.get_token_sdp(text, sour_id, targ_id, returnWord=False)
+        sdp_e1_dist = ["%s_%i" % ('R' if int(sdp[0]) >= int(sdp[-1]) else 'L', len(sdp) - 1) for sdp in sdp_e1_ids]
+        sdp_e2_dist = ["%s_%i" % ('R' if int(sdp[0]) >= int(sdp[-1]) else 'L', len(sdp) - 1) for sdp in sdp_e2_ids]
+        return sdp_e1_dist, sdp_e2_dist
+
 
 class TestRESyntax(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(TestRESyntax, self).__init__(*args, **kwargs)
         self.parser = SpacyParser(model='en_core_web_lg')
-        self.text = "new haven police chief james lewis left his post after his contract expired jan. 31 ."
+        self.text = "this process passes on a health gene to the next generation ."
 
     def test_get_SDP_reps(self):
-        sour_sdp_toks, targ_sdp_toks = self.parser.get_token_sdp(self.text, 6, 10)
+        sour_sdp_toks, targ_sdp_toks = self.parser.get_token_sdp(self.text, 6, 10, returnWord=False)
         for sdp in sour_sdp_toks:
             print(sdp)
         for sdp in targ_sdp_toks:
             print(sdp)
+
+    def test_get_SDP_dist(self):
+        sour_sdp_dist, targ_sdp_dist = self.parser.get_sdp_dist(self.text, 6, 10)
+        print(sour_sdp_dist)
+        print(targ_sdp_dist)
 
     def test_visualize(self):
         print(self.parser.tokenize(self.text))

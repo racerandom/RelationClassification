@@ -53,11 +53,11 @@ def get_checkpoint_file(checkpoint_base, monitor, score):
                              score)
 
 
-def model_instance(word_size, targ_size,
+def model_instance(word_size, dsdp_size, targ_size,
                    max_sent_len, max_sdp_len, pre_embed, **params):
 
     model = getattr(REModule, params['classification_model'])(
-        word_size, targ_size,
+        word_size, dsdp_size, targ_size,
         max_sent_len, max_sdp_len, pre_embed, **params
     ).to(device=device)
 
@@ -84,7 +84,7 @@ def model_instance(word_size, targ_size,
 
 
 def optimize_model(train_file, test_file, embed_file, param_space,
-                   pi_feat, sdp_feat, tsdp_feat, max_evals=10):
+                   feat_dict, max_evals=10):
 
     print('device:', device)
 
@@ -97,9 +97,11 @@ def optimize_model(train_file, test_file, embed_file, param_space,
 
     test_rels = REData.load_pickle(pickle_file=test_file)
 
-    _, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
+    _, targ2ix, max_sent_len, max_sdp_len = REData.prepare_word2ix(train_rels + test_rels)
 
     word2ix, embed_weights = REData.load_pickle(embed_file)
+
+    dsdp2ix = REData.prepare_dsdp2ix(train_rels + test_rels)
 
     train_indice, val_indice = REData.stratified_split_val(train_rels,
                                                            val_rate=0.1,
@@ -109,34 +111,31 @@ def optimize_model(train_file, test_file, embed_file, param_space,
     train_dataset = REData.prepare_tensors(
         [train_rels[index] for index in train_indice],
         word2ix,
+        dsdp2ix,
         targ2ix,
         max_sent_len,
         max_sdp_len,
-        pi_feat,
-        sdp_feat,
-        tsdp_feat
+        feat_dict
     )
 
     val_dataset = REData.prepare_tensors(
         [train_rels[index] for index in val_indice],
         word2ix,
+        dsdp2ix,
         targ2ix,
         max_sent_len,
         max_sdp_len,
-        pi_feat,
-        sdp_feat,
-        tsdp_feat
+        feat_dict
     )
 
     test_dataset = REData.prepare_tensors(
         test_rels,
         word2ix,
+        dsdp2ix,
         targ2ix,
         max_sent_len,
         max_sdp_len,
-        pi_feat,
-        sdp_feat,
-        tsdp_feat
+        feat_dict
     )
 
     global_eval_history = defaultdict(list)
@@ -157,7 +156,7 @@ def optimize_model(train_file, test_file, embed_file, param_space,
 
         logger.info('[Selected %i Params]: %s' % (eval_i, params))
 
-        model, optimizer = model_instance(len(word2ix), len(targ2ix),
+        model, optimizer = model_instance(len(word2ix), len(dsdp2ix), len(targ2ix),
                                           max_sent_len, max_sdp_len, embed_weights, **params)
 
         # global_best_score = ModuleOptim.get_best_score(global_eval_history['monitor_score'], monitor)
@@ -188,7 +187,7 @@ def optimize_model(train_file, test_file, embed_file, param_space,
     params = best_checkpoint['params']
 
     model = getattr(REModule, params['classification_model'])(
-                len(word2ix), len(targ2ix),
+                len(word2ix), len(dsdp2ix), len(targ2ix),
                 max_sent_len, max_sdp_len, embed_weights, **params
             ).to(device=device)
 
@@ -390,7 +389,7 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    classification_model = 'baseRNN'
+    classification_model = 'DSDPRNN'
 
     param_space = {
         'classification_model': [classification_model],
@@ -400,12 +399,13 @@ def main():
         'sdp_cnn_droprate': [0.3],
         'sdp_fc_dim': [100],
         'sdp_fc_droprate': [0.3],
+        'dsdp_dim': [25],
         'input_dropout': [0.3],
-        'rnn_hidden_dim': [200],
+        'rnn_hidden_dim': [300],
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
         'attn_dropout': [0.3],
-        'fc1_hidden_dim': [200],
+        'fc1_hidden_dim': [300],
         'fc1_dropout': [0.5],
         'batch_size': [32],
         'epoch_num': [200],
@@ -423,25 +423,23 @@ def main():
         'margin_neg': [0.5, 1],
     }
 
-    # pi_feat = '.PI' if classification_model in ['baseRNN',
-    #                                             'attnRNN',
-    #                                             'attnDotRNN',
-    #                                             'attnMatRNN'] else ''
-
-    pi_feat = True
-    sdp_feat = False
-    tsdp_feat = False
+    feat_dict = {
+        'PI': False,
+        'SDP': False,
+        'TSDP': False,
+        'DSDP': True
+    }
 
     feat_suffix = ''
-    feat_suffix += '.SDP' if sdp_feat else ''
-    feat_suffix += '.TSDP' if tsdp_feat else ''
-    feat_suffix += '.PI' if pi_feat else ''
+    for k, v in feat_dict.items():
+        if v:
+            feat_suffix += '.%s' % k
 
     train_file = "data/train%s.pkl" % feat_suffix
     test_file = "data/test%s.pkl" % feat_suffix
     embed_file = "data/glove.100d.embed"
 
-    optimize_model(train_file, test_file, embed_file, param_space, pi_feat, sdp_feat, tsdp_feat, max_evals=1)
+    optimize_model(train_file, test_file, embed_file, param_space, feat_dict, max_evals=1)
 
 
 if __name__ == '__main__':

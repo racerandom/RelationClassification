@@ -100,7 +100,7 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, 
 
     test_rels = REData.load_pickle(pickle_file=test_file)
 
-    _, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
+    _, targ2ix, max_sent_len, max_sdp_len = REData.prepare_word2ix(train_rels + test_rels)
 
     word2ix, embed_weights = REData.load_pickle(embed_file)
 
