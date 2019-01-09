@@ -260,7 +260,11 @@ def train_model(model, optimizer, kbest_scores,
 
             pred_prob = model(*train_feats)
             if params['ranking_loss']:
-                train_loss = REModule.ranking_loss(pred_prob, train_targ, omit_other=params['omit_other'])
+                train_loss = REModule.ranking_loss(pred_prob, train_targ,
+                                                   gamma=params['gamma'],
+                                                   margin_pos=params['margin_pos'],
+                                                   margin_neg=params['margin_neg'],
+                                                   omit_other=params['omit_other'])
                 train_pred = REModule.infer_pred(pred_prob, omit_other=params['omit_other'])
             else:
                 train_loss = F.nll_loss(pred_prob, train_targ)
@@ -402,11 +406,11 @@ def main():
         'monitor': ['val_f1'],
         'check_interval': [100],    # checkpoint based on val performance given a step interval
         'kbest_checkpoint': [5],
-        'ranking_loss': [False],
-        'omit_other': [False]
-        # 'gamma': [2],
-        # 'margin_pos': [2.5],
-        # 'margin_neg': [0.5],
+        'ranking_loss': [True],
+        'omit_other': [True],
+        'gamma': [2],
+        'margin_pos': [2.5],
+        'margin_neg': [0.5],
     }
 
     # pi_feat = '.PI' if classification_model in ['baseRNN',

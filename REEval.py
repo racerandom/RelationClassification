@@ -99,13 +99,14 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
 
     test_rels = REData.load_pickle(pickle_file=test_file)
 
-    word2ix, targ2ix, max_sent_len = REData.prepare_feat2ix(train_rels + test_rels)
+    word2ix, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
 
     test_data = REData.prepare_tensors(
         test_rels,
         word2ix,
         targ2ix,
-        max_sent_len
+        max_sent_len,
+        max_sdp_len
     )
 
     embed_weights = REData.load_pickle(embed_file)
@@ -132,7 +133,7 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
 
     model = getattr(REModule, params['classification_model'])(
         len(word2ix), len(targ2ix),
-        max_sent_len, embed_weights, **params
+        max_sent_len, max_sdp_len, embed_weights, **params
     ).to(device=device)
 
     model.load_state_dict(checkpoint['state_dict'])
@@ -166,10 +167,18 @@ def main():
     # ] else ''
 
     pi_feat = False
+    sdp_feat = False
+    tsdp_feat = True
 
-    train_file = "data/train%s.pkl" % ('.PI' if pi_feat else '')
-    test_file = "data/test%s.pkl" % ('.PI' if pi_feat else '')
-    embed_file = "data/glove%s.100d.embed" % ('.PI' if pi_feat else '')
+    feat_suffix = ''
+    feat_suffix += '.SDP' if sdp_feat else ''
+    feat_suffix += '.TSDP' if tsdp_feat else ''
+    feat_suffix += '.PI' if pi_feat else ''
+
+    train_file = "data/train%s.pkl" % feat_suffix
+    test_file = "data/test%s.pkl" % feat_suffix
+    embed_file = "data/glove.100d.embed"
+
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 

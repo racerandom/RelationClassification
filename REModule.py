@@ -222,7 +222,7 @@ class softmax_layer(nn.Module):
 class baseRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -380,7 +380,7 @@ class TSDPRNN(baseConfig, nn.Module):
 class attnRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -448,7 +448,7 @@ class attnRNN(baseConfig, nn.Module):
 class attnInBaseRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -507,7 +507,7 @@ class attnInBaseRNN(baseConfig, nn.Module):
 class attnDotRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -566,7 +566,7 @@ class attnDotRNN(baseConfig, nn.Module):
 class attnMatRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -635,7 +635,7 @@ class attnMatRNN(baseConfig, nn.Module):
 class entiAttnDotRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -705,7 +705,7 @@ class entiAttnDotRNN(baseConfig, nn.Module):
 class entiAttnMatRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
@@ -791,7 +791,7 @@ class entiAttnMatRNN(baseConfig, nn.Module):
 class mulEntiAttnDotRNN(baseConfig, nn.Module):
 
     def __init__(self, word_size, targ_size,
-                 max_sent_len, pre_embed, **params):
+                 max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
             self, word_size, targ_size,
