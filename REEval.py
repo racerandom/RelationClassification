@@ -93,23 +93,27 @@ def eval_output(model, test_datset, targ2ix, ranking_loss, omit_other, pred_file
             answer_fo.write("%i\t%s\n" % (s_id, ix2targ[gold.item()]))
 
 
-def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file):
+def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, sdp_feat, tsdp_feat,
+                   pred_file, answer_file):
 
     train_rels = REData.load_pickle(pickle_file=train_file)
 
     test_rels = REData.load_pickle(pickle_file=test_file)
 
-    word2ix, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
+    _, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
+
+    word2ix, embed_weights = REData.load_pickle(embed_file)
 
     test_data = REData.prepare_tensors(
         test_rels,
         word2ix,
         targ2ix,
         max_sent_len,
-        max_sdp_len
+        max_sdp_len,
+        pi_feat,
+        sdp_feat,
+        tsdp_feat
     )
-
-    embed_weights = REData.load_pickle(embed_file)
 
     checkpoint = torch.load(checkpoint_file,
                             map_location=lambda storage,
@@ -119,9 +123,9 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file
 
     test_data_loader = Data.DataLoader(
         dataset=ModuleOptim.CustomizedDatasets(*test_data),
-        batch_size=params['batch_size'],
+        batch_size=128,
         collate_fn=ModuleOptim.collate_fn,
-        shuffle=True,
+        shuffle=False,
         num_workers=1,
     )
 
@@ -166,9 +170,9 @@ def main():
     #     'attnMatRNN'
     # ] else ''
 
-    pi_feat = False
+    pi_feat = True
     sdp_feat = False
-    tsdp_feat = True
+    tsdp_feat = False
 
     feat_suffix = ''
     feat_suffix += '.SDP' if sdp_feat else ''
@@ -182,7 +186,7 @@ def main():
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 
-    extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pred_file, answer_file)
+    extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, sdp_feat, tsdp_feat, pred_file, answer_file)
 
     call_official_eval(pred_file, answer_file)
 

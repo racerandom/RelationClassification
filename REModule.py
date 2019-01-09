@@ -282,6 +282,8 @@ class tokenSDP(nn.Module):
 
         nn.Module.__init__(self)
 
+        self.input_dropout = nn.Dropout(p=self.params['input_dropout'])
+
         self.cnn = nn.Conv1d(word_dim,
                              params['sdp_filter_nb'],
                              params['sdp_kernel_len'])
@@ -298,7 +300,7 @@ class tokenSDP(nn.Module):
 
     def forward(self, embed_input):
 
-        cnn_out = F.relu(self.cnn(embed_input.transpose(1, 2)))
+        cnn_out = F.relu(self.cnn(self.input_dropout(embed_input).transpose(1, 2)))
 
         pool_out = self.cnn_dropout(self.pool(cnn_out).squeeze(-1))
 
@@ -360,7 +362,6 @@ class TSDPRNN(baseConfig, nn.Module):
         rnn_input = torch.cat((self.input_dropout(word_embed_input),
                                tsdp_e1.view(batch_size, self.max_sent_len, -1),
                                tsdp_e2.view(batch_size, self.max_sent_len, -1)), dim=-1)
-
 
         rnn_hidden = self.init_rnn_hidden(batch_size,
                                           self.rnn_hidden_dim,

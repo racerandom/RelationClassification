@@ -97,7 +97,9 @@ def optimize_model(train_file, test_file, embed_file, param_space,
 
     test_rels = REData.load_pickle(pickle_file=test_file)
 
-    word2ix, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
+    _, targ2ix, max_sent_len, max_sdp_len = REData.prepare_feat2ix(train_rels + test_rels)
+
+    word2ix, embed_weights = REData.load_pickle(embed_file)
 
     train_indice, val_indice = REData.stratified_split_val(train_rels,
                                                            val_rate=0.1,
@@ -136,8 +138,6 @@ def optimize_model(train_file, test_file, embed_file, param_space,
         sdp_feat,
         tsdp_feat
     )
-
-    embed_weights = REData.load_pickle(embed_file)
 
     global_eval_history = defaultdict(list)
 
@@ -189,14 +189,14 @@ def optimize_model(train_file, test_file, embed_file, param_space,
 
     model = getattr(REModule, params['classification_model'])(
                 len(word2ix), len(targ2ix),
-                max_sent_len, embed_weights, **params
+                max_sent_len, max_sdp_len, embed_weights, **params
             ).to(device=device)
 
     test_data_loader = Data.DataLoader(
         dataset=ModuleOptim.CustomizedDatasets(*test_dataset),
-        batch_size=64,
+        batch_size=128,
         collate_fn=ModuleOptim.collate_fn,
-        shuffle=True,
+        shuffle=False,
         num_workers=1,
     )
 
@@ -344,8 +344,8 @@ def train_model(model, optimizer, kbest_scores,
                 logger.debug(
                     'epoch: %2i, step: %4i, time: %4.1fs | '
                     'train loss: %.4f, train acc: %.4f | '
-                    'val loss: %.4f, val acc: %.4f | '
-                    'test loss: %.4f, test acc: %.4f %s'
+                    'val loss: %.4f, val f1: %.4f | '
+                    'test loss: %.4f, test f1: %.4f %s'
                     % (
                         epoch,
                         step,
@@ -353,9 +353,9 @@ def train_model(model, optimizer, kbest_scores,
                         train_loss,
                         train_acc,
                         val_loss,
-                        val_acc,
+                        val_f1,
                         test_loss,
-                        test_acc,
+                        test_f1,
                         global_save_info
                     )
                 )
@@ -390,16 +390,16 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    classification_model = 'attnRNN'
+    classification_model = 'baseRNN'
 
     param_space = {
         'classification_model': [classification_model],
         'freeze_mode': [False],
         'sdp_filter_nb': [100],
         'sdp_kernel_len': [3],
-        'sdp_cnn_droprate': [0.5],
-        'sdp_fc_dim': [50],
-        'sdp_fc_droprate': [0.5],
+        'sdp_cnn_droprate': [0.3],
+        'sdp_fc_dim': [100],
+        'sdp_fc_droprate': [0.3],
         'input_dropout': [0.3],
         'rnn_hidden_dim': [200],
         'rnn_layer': [1],
@@ -416,8 +416,8 @@ def main():
         'monitor': ['val_f1'],
         'check_interval': [100],    # checkpoint based on val performance given a step interval
         'kbest_checkpoint': [5],
-        'ranking_loss': [True],
-        'omit_other': [True],
+        'ranking_loss': [False],
+        'omit_other': [False],
         'gamma': [1, 1.5, 2],
         'margin_pos': [1.5, 2, 2.5, 3],
         'margin_neg': [0.5, 1],

@@ -246,7 +246,7 @@ def save_all_data(train_pickle_file, test_pickle_file,
 def slim_word_embed(word2ix, embed_file, embed_pickle_file):
 
     embed_weights = pre_embed_to_weight(word2ix, embed_file)
-    pickle_data(embed_weights, pickle_file=embed_pickle_file)
+    pickle_data((word2ix, embed_weights), pickle_file=embed_pickle_file)
 
 
 def prepare_feat2ix(dataset):
@@ -343,7 +343,7 @@ def main():
 
     pi_feat = True
     sdp_feat = False
-    tsdp_feat = True
+    tsdp_feat = False
 
     feat_suffix = ''
     feat_suffix += '.SDP' if sdp_feat else ''
