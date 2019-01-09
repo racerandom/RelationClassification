@@ -83,7 +83,8 @@ def model_instance(word_size, targ_size,
     return model, optimizer
 
 
-def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10):
+def optimize_model(train_file, test_file, embed_file, param_space,
+                   pi_feat, sdp_feat, tsdp_feat, max_evals=10):
 
     print('device:', device)
 
@@ -108,7 +109,10 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
         word2ix,
         targ2ix,
         max_sent_len,
-        max_sdp_len
+        max_sdp_len,
+        pi_feat,
+        sdp_feat,
+        tsdp_feat
     )
 
     val_dataset = REData.prepare_tensors(
@@ -116,7 +120,10 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
         word2ix,
         targ2ix,
         max_sent_len,
-        max_sdp_len
+        max_sdp_len,
+        pi_feat,
+        sdp_feat,
+        tsdp_feat
     )
 
     test_dataset = REData.prepare_tensors(
@@ -124,7 +131,10 @@ def optimize_model(train_file, test_file, embed_file, param_space, max_evals=10)
         word2ix,
         targ2ix,
         max_sent_len,
-        max_sdp_len
+        max_sdp_len,
+        pi_feat,
+        sdp_feat,
+        tsdp_feat
     )
 
     embed_weights = REData.load_pickle(embed_file)
@@ -380,7 +390,7 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    classification_model = 'TSDPRNN'
+    classification_model = 'attnRNN'
 
     param_space = {
         'classification_model': [classification_model],
@@ -408,9 +418,9 @@ def main():
         'kbest_checkpoint': [5],
         'ranking_loss': [True],
         'omit_other': [True],
-        'gamma': [2],
-        'margin_pos': [2.5],
-        'margin_neg': [0.5],
+        'gamma': [1, 1.5, 2],
+        'margin_pos': [1.5, 2, 2.5, 3],
+        'margin_neg': [0.5, 1],
     }
 
     # pi_feat = '.PI' if classification_model in ['baseRNN',
@@ -418,9 +428,9 @@ def main():
     #                                             'attnDotRNN',
     #                                             'attnMatRNN'] else ''
 
-    pi_feat = False
+    pi_feat = True
     sdp_feat = False
-    tsdp_feat = True
+    tsdp_feat = False
 
     feat_suffix = ''
     feat_suffix += '.SDP' if sdp_feat else ''
@@ -431,7 +441,7 @@ def main():
     test_file = "data/test%s.pkl" % feat_suffix
     embed_file = "data/glove.100d.embed"
 
-    optimize_model(train_file, test_file, embed_file, param_space, max_evals=1)
+    optimize_model(train_file, test_file, embed_file, param_space, pi_feat, sdp_feat, tsdp_feat, max_evals=1)
 
 
 if __name__ == '__main__':

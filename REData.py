@@ -255,10 +255,13 @@ def prepare_feat2ix(dataset):
     max_sent_len = max_len_2d(token_sent)
     word2ix = feat_to_ix(token_sent)
 
-    token_sdp_e1 = [rel.feat_inputs['token_sdp'][0] for rel in dataset]
-    token_sdp_e2 = [rel.feat_inputs['token_sdp'][1] for rel in dataset]
+    if 'token_sdp' in dataset[0].feat_inputs:
+        token_sdp_e1 = [rel.feat_inputs['token_sdp'][0] for rel in dataset]
+        token_sdp_e2 = [rel.feat_inputs['token_sdp'][1] for rel in dataset]
 
-    max_sdp_len = max(max_len_3d(token_sdp_e1), max_len_3d(token_sdp_e2))
+        max_sdp_len = max(max_len_3d(token_sdp_e1), max_len_3d(token_sdp_e2))
+    else:
+        max_sdp_len = 0
 
     rel_label = [rel.rel for rel in dataset]
     targ2ix = targ_to_ix(rel_label)
@@ -307,15 +310,19 @@ def prepare_sdp_feat(rel, parser):
 #     return word_feat
 
 
-def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len, max_sdp_len):
+def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len, max_sdp_len, pi_feat, sdp_feat, tsdp_feat):
 
     word_feat = [rel.feat_inputs['seq_sent'] for rel in rel_data]
     word_t = torch.tensor(padding_2d(prepare_seq_2d(word_feat, word2ix), max_sent_len))
 
-    tsdp_e1 = [rel.feat_inputs['token_sdp'][0] for rel in rel_data]
-    tsdp_e2 = [rel.feat_inputs['token_sdp'][1] for rel in rel_data]
-    tsdp_e1_t = torch.tensor(padding_3d(prepare_seq_3d(tsdp_e1, word2ix), max_sent_len, max_sdp_len))
-    tsdp_e2_t = torch.tensor(padding_3d(prepare_seq_3d(tsdp_e2, word2ix), max_sent_len, max_sdp_len))
+    if tsdp_feat:
+        tsdp_e1 = [rel.feat_inputs['token_sdp'][0] for rel in rel_data]
+        tsdp_e2 = [rel.feat_inputs['token_sdp'][1] for rel in rel_data]
+        tsdp_e1_t = torch.tensor(padding_3d(prepare_seq_3d(tsdp_e1, word2ix), max_sent_len, max_sdp_len))
+        tsdp_e2_t = torch.tensor(padding_3d(prepare_seq_3d(tsdp_e2, word2ix), max_sent_len, max_sdp_len))
+    else:
+        tsdp_e1_t = None
+        tsdp_e2_t = None
 
     targs = [rel.rel for rel in rel_data]
     targ_t = torch.tensor(prepare_seq_1d(targs, targ2ix))
@@ -326,12 +333,15 @@ def prepare_tensors(rel_data, word2ix, targ2ix, max_sent_len, max_sdp_len):
     print("[Data] tensor feats are prepared : word %s, targs %s\n" % (word_t.shape,
                                                                       targ_t.shape))
 
-    return word_t, e1ix_l, e2ix_l, tsdp_e1_t, tsdp_e2_t, targ_t
+    if tsdp_feat:
+        return word_t, e1ix_l, e2ix_l, tsdp_e1_t, tsdp_e2_t, targ_t
+    else:
+        return word_t, e1ix_l, e2ix_l, targ_t
 
 
 def main():
 
-    pi_feat = False
+    pi_feat = True
     sdp_feat = False
     tsdp_feat = True
 
