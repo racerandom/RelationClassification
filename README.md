@@ -1,0 +1,4 @@
+Relation Classification
+
+Task
+SemEval2010_task8
