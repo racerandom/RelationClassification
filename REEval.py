@@ -93,7 +93,7 @@ def eval_output(model, test_datset, targ2ix, ranking_loss, omit_other, pred_file
             answer_fo.write("%i\t%s\n" % (s_id, ix2targ[gold.item()]))
 
 
-def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, sdp_feat, tsdp_feat,
+def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, feat_dict,
                    pred_file, answer_file):
 
     train_rels = REData.load_pickle(pickle_file=train_file)
@@ -104,15 +104,16 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, 
 
     word2ix, embed_weights = REData.load_pickle(embed_file)
 
+    dsdp2ix = REData.prepare_dsdp2ix(train_rels + test_rels) if feat_dict['DSDP'] else {}
+
     test_data = REData.prepare_tensors(
         test_rels,
         word2ix,
+        dsdp2ix,
         targ2ix,
         max_sent_len,
         max_sdp_len,
-        pi_feat,
-        sdp_feat,
-        tsdp_feat
+        feat_dict
     )
 
     checkpoint = torch.load(checkpoint_file,
@@ -136,7 +137,7 @@ def extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, 
     ))
 
     model = getattr(REModule, params['classification_model'])(
-        len(word2ix), len(targ2ix),
+        len(word2ix), len(dsdp2ix), len(targ2ix),
         max_sent_len, max_sdp_len, embed_weights, **params
     ).to(device=device)
 
@@ -163,21 +164,17 @@ def main():
 
     checkpoint_file = sys.argv[1]
 
-    # pi_feat = '.PI' if checkpoint_file.split('_')[1] in [
-    #     'baseRNN',
-    #     'attnRNN',
-    #     'attnDotRNN',
-    #     'attnMatRNN'
-    # ] else ''
-
-    pi_feat = True
-    sdp_feat = False
-    tsdp_feat = False
+    feat_dict = {
+        'PI': False,
+        'SDP': False,
+        'TSDP': False,
+        'DSDP': True
+    }
 
     feat_suffix = ''
-    feat_suffix += '.SDP' if sdp_feat else ''
-    feat_suffix += '.TSDP' if tsdp_feat else ''
-    feat_suffix += '.PI' if pi_feat else ''
+    for k, v in feat_dict.items():
+        if v:
+            feat_suffix += '.%s' % k
 
     train_file = "data/train%s.pkl" % feat_suffix
     test_file = "data/test%s.pkl" % feat_suffix
@@ -186,7 +183,7 @@ def main():
     pred_file = "outputs/pred.txt"
     answer_file = "outputs/test.txt"
 
-    extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, pi_feat, sdp_feat, tsdp_feat, pred_file, answer_file)
+    extrinsic_eval(checkpoint_file, train_file, test_file, embed_file, feat_dict, pred_file, answer_file)
 
     call_official_eval(pred_file, answer_file)
 

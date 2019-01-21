@@ -101,7 +101,7 @@ def optimize_model(train_file, test_file, embed_file, param_space,
 
     word2ix, embed_weights = REData.load_pickle(embed_file)
 
-    dsdp2ix = REData.prepare_dsdp2ix(train_rels + test_rels)
+    dsdp2ix = REData.prepare_dsdp2ix(train_rels + test_rels) if feat_dict['DSDP'] else {}
 
     train_indice, val_indice = REData.stratified_split_val(train_rels,
                                                            val_rate=0.1,
@@ -389,18 +389,18 @@ def train_model(model, optimizer, kbest_scores,
 
 def main():
 
-    classification_model = 'DSDPRNN'
+    classification_model = 'baseRNN'
 
     param_space = {
         'classification_model': [classification_model],
         'freeze_mode': [False],
-        'sdp_filter_nb': [100],
+        'sdp_filter_nb': [100],     # SDP representation for each token
         'sdp_kernel_len': [3],
         'sdp_cnn_droprate': [0.3],
         'sdp_fc_dim': [100],
         'sdp_fc_droprate': [0.3],
         'dsdp_dim': [25],
-        'input_dropout': [0.3],
+        'input_dropout': [0.3],     # hyper-parameters of neural networks
         'rnn_hidden_dim': [300],
         'rnn_layer': [1],
         'rnn_dropout': [0.3],
@@ -409,25 +409,25 @@ def main():
         'fc1_dropout': [0.5],
         'batch_size': [32],
         'epoch_num': [200],
-        'lr': [1e-0],
+        'lr': [1e-0],           # hyper-parameters of optimizer
         'weight_decay': [1e-4],
         'max_norm': [3],
-        'patience': [10],
+        'patience': [10],       # early stopping
         'monitor': ['val_f1'],
         'check_interval': [100],    # checkpoint based on val performance given a step interval
         'kbest_checkpoint': [5],
-        'ranking_loss': [False],
+        'ranking_loss': [False],    # ranking loss for the baseRNN model
         'omit_other': [False],
-        'gamma': [1, 1.5, 2],
-        'margin_pos': [1.5, 2, 2.5, 3],
-        'margin_neg': [0.5, 1],
+        'gamma': [2],
+        'margin_pos': [2.5],
+        'margin_neg': [0.5],
     }
 
     feat_dict = {
-        'PI': False,
+        'PI': True,   # Position Indicator Features for 'baseRNN', 'attnRNN'
         'SDP': False,
         'TSDP': False,
-        'DSDP': True
+        'DSDP': False
     }
 
     feat_suffix = ''

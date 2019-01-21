@@ -360,10 +360,10 @@ def prepare_tensors(rel_data, word2ix, dsdp2ix, targ2ix, max_sent_len, max_sdp_l
 def main():
 
     feat_dict = {
-        'PI': False,
+        'PI': True,               # Position Indicator Features for 'baseRNN', 'attnRNN'
         'SDP': False,
         'TSDP': False,
-        'DSDP': True
+        'DSDP': False
     }
 
     feat_suffix = ''
@@ -383,7 +383,7 @@ def main():
 
     word2ix, targ2ix, max_sent_len, max_sdp_len = prepare_word2ix(train_data + test_data)
 
-    dsdp2ix = prepare_dsdp2ix(train_data + test_data)
+    dsdp2ix = prepare_dsdp2ix(train_data + test_data) if feat_dict['DSDP'] else {}
 
     embed_file = "/Users/fei-c/Resources/embed/glove.6B.100d.bin"
     embed_pickle_file = "data/glove.100d.embed"

@@ -221,7 +221,7 @@ class softmax_layer(nn.Module):
 
 class baseRNN(baseConfig, nn.Module):
 
-    def __init__(self, word_size, targ_size,
+    def __init__(self, word_size, dsdp_size, targ_size,
                  max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
@@ -441,7 +441,7 @@ class TSDPRNN(baseConfig, nn.Module):
 
 class attnRNN(baseConfig, nn.Module):
 
-    def __init__(self, word_size, targ_size,
+    def __init__(self, word_size, dsdp_size, targ_size,
                  max_sent_len, max_sdp_len, pre_embed, **params):
 
         baseConfig.__init__(
