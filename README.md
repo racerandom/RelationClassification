@@ -20,6 +20,9 @@ run: python REOptimize.py
 
 ## Required Python package
 pytorch==0.4.0
+
 scikit-learn==0.20.1
+
 networkx==2.2
+
 spacy==2.0.16
