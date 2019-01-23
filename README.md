@@ -2,6 +2,7 @@
 
 ## Task
 SemEval2010_task8
+https://docs.google.com/document/d/1QO_CnmvNRnYwNWu1-QCAeR5ToQYkXUqFeAJbdEhsq7w/preview
 
 ## Data
 Generate data for training models. Please set featdict with 'PI': True for baseRNN and attnRNN models.
