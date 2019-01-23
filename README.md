@@ -1,7 +1,7 @@
 # Relation Classification
 
 ## Task
-SemEval2010_task8
+SemEval2010_task8  
 (https://docs.google.com/document/d/1QO_CnmvNRnYwNWu1-QCAeR5ToQYkXUqFeAJbdEhsq7w/preview)
 
 ## Data
