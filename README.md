@@ -24,7 +24,7 @@ run: python REOptimize.py
 ###### dos Santos, Cicero, Bing Xiang, and Bowen Zhou. "Classifying Relations by Ranking with Convolutional Neural Networks." Proceedings of the 53rd Annual Meeting of the Association for Computational Linguistics and the 7th International Joint Conference on Natural Language Processing (Volume 1: Long Papers). Vol. 1. 2015.  
 
 ## Required Python package
-python3
+python3  
 pytorch==0.4.0  
 scikit-learn==0.20.1  
 networkx==2.2  
